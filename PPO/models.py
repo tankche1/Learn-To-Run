@@ -11,7 +11,7 @@ def square(a):
 
 class ActorCritic(nn.Module):
 
-    def __init__(self, num_inputs, num_outputs, hidden=64):
+    def __init__(self, num_inputs, num_outputs, hidden=128):
         super(ActorCritic, self).__init__()
         self.affine1 = nn.Linear(num_inputs, hidden)
         self.affine2 = nn.Linear(hidden, hidden)
@@ -33,8 +33,8 @@ class ActorCritic(nn.Module):
 
     def forward(self, x, old=False):
         if old:
-            x = F.tanh(self.module_list_old[0](x))
-            x = F.tanh(self.module_list_old[1](x))
+            x = F.leaky_relu(self.module_list_old[0](x))
+            x = F.leaky_relu(self.module_list_old[1](x))
 
             action_mean = self.module_list_old[2](x)
             action_log_std = self.module_list_old[3].expand_as(action_mean)
@@ -42,8 +42,8 @@ class ActorCritic(nn.Module):
 
             value = self.module_list_old[4](x)
         else:
-            x = F.tanh(self.affine1(x))
-            x = F.tanh(self.affine2(x))
+            x = F.leaky_relu(self.affine1(x))
+            x = F.leaky_relu(self.affine2(x))
 
             action_mean = self.action_mean(x)
             action_log_std = self.action_log_std.expand_as(action_mean)

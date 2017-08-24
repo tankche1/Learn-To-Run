@@ -77,7 +77,6 @@ def save_model(model,PATH_TO_MODEL,epoch):
     print('done.')
 
 
-
 #env = gym.make(args.env_name)
 
 if args.render:
@@ -88,8 +87,18 @@ else:
 
 #num_inputs = env.observation_space.shape[0]
 #num_actions = env.action_space.shape[0]
-num_inputs = 41
+num_inputs = 41 + 41
 num_actions = 18
+last_state = numpy.zeros(41)
+
+def update_observation(state):
+    len = state.shape[0]
+    final = numpy.array([0.1]*82)
+    final[0:41] = state[0:41]
+    global last_state
+    final[41:82] = (state - last_state)/0.01
+    last_state = state
+    return final
 
 #env.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -252,6 +261,7 @@ running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
 episode_lengths = []
 
+
 for i_episode in count(1):
     memory = Memory()
 
@@ -263,6 +273,11 @@ for i_episode in count(1):
         #print(num_steps)
         state = env.reset(difficulty = 0)
         state = numpy.array(state)
+        #global last_state
+        last_state = state
+        state = update_observation(state)
+        #print(state.shape[0])
+        #print(state[41])
         state = running_state(state)
 
         reward_sum = 0
@@ -276,11 +291,17 @@ for i_episode in count(1):
             action = action.data[0].numpy()
             #print(action)
             #print("------------------------")
+            env.step(action)
+            #if done==False:
+            env.step(action)
+            #if done==False:
             next_state, reward, done, _ = env.step(action)
             next_state = numpy.array(next_state)
             reward_sum += reward
 
+            next_state = update_observation(next_state)
             next_state = running_state(next_state)
+            #print(next_state[41:82])
 
             mask = 1
             if done:
@@ -310,7 +331,7 @@ for i_episode in count(1):
             i_episode, reward_sum, reward_batch))
 
     epoch = i_episode
-    if epoch%50==0:
+    if epoch%30==0:
         save_model({
                 'epoch': epoch ,
                 'bh': args.bh,
