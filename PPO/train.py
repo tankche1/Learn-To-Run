@@ -1,0 +1,329 @@
+# pip install http://download.pytorch.org/whl/cu75/torch-0.1.12.post2-cp27-none-linux_x86_64.whl
+import argparse
+import sys
+import math
+import os
+from collections import namedtuple
+from itertools import count
+
+import numpy as np
+import numpy
+
+#import scipy.optimize
+
+import torch
+import torch.autograd as autograd
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torchvision.transforms as T
+from torch.autograd import Variable
+
+from models import Policy, Value, ActorCritic
+from replay_memory import Memory
+from running_state import ZFilter
+
+from osim.env import RunEnv
+import math
+import time
+
+# from utils import *
+
+PI = torch.DoubleTensor([3.1415926])
+
+def save_model(model,PATH_TO_MODEL,epoch):
+    print('saving the model ...')
+    if not os.path.exists(PATH_TO_MODEL):
+        os.mkdir(PATH_TO_MODEL)
+
+    torch.save(model,PATH_TO_MODEL+'/'+str(epoch)+'.t7')
+    print('done.')
+
+
+def update_observation(last_state,state):
+    len = state.shape[0]
+    final = numpy.array([0.1]*82)
+    final[0:41] = state[0:41]
+    final[41:82] = (state - last_state)/0.01
+    #last_state = state
+    return state,final
+
+def select_action(state):
+    state = torch.from_numpy(state).unsqueeze(0)
+    action_mean, _, action_std = policy_net(Variable(state))
+    action = torch.normal(action_mean, action_std)
+    return action
+
+def select_action_actor_critic(state,ac_net):
+    state = torch.from_numpy(state).unsqueeze(0)
+    action_mean, _, action_std, v = ac_net(Variable(state))
+    action = torch.normal(action_mean, action_std)
+    return action
+
+def normal_log_density(x, mean, log_std, std):
+    var = std.pow(2)
+    #print(x,mean,var,log_std,PI)
+    A = -(x - mean).pow(2) / (2 * var)
+    B = -0.5*math.log(2*3.1415926)
+    log_density = A + B - log_std
+    #log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * torch.log(2 * Variable(PI)) - log_std
+    return log_density.sum(1)
+
+def ensure_shared_grads(model, shared_model):
+    for param, shared_param in zip(model.parameters(), shared_model.parameters()):
+        if shared_param.grad is not None:
+            #print('FUCK')
+            return
+        shared_param._grad = param.grad
+
+def update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac):
+    rewards = torch.Tensor(batch.reward)
+    masks = torch.Tensor(batch.mask)
+    actions = torch.Tensor(np.concatenate(batch.action, 0))
+    states = torch.Tensor(batch.state)
+    action_means, action_log_stds, action_stds, values = ac_net(Variable(states))
+
+    returns = torch.Tensor(actions.size(0),1)
+    deltas = torch.Tensor(actions.size(0),1)
+    advantages = torch.Tensor(actions.size(0),1)
+
+    prev_return = 0
+    prev_value = 0
+    prev_advantage = 0
+    for i in reversed(range(rewards.size(0))):
+        returns[i] = rewards[i] + args.gamma * prev_return * masks[i]
+        deltas[i] = rewards[i] + args.gamma * prev_value * masks[i] - values.data[i]
+        advantages[i] = deltas[i] + args.gamma * args.tau * prev_advantage * masks[i]
+        prev_return = returns[i, 0]
+        prev_value = values.data[i, 0]
+        prev_advantage = advantages[i, 0]
+
+    targets = Variable(returns)
+
+    # kloldnew = policy_net.kl_old_new() # oldpi.pd.kl(pi.pd)
+    # ent = policy_net.entropy() #pi.pd.entropy()
+    # meankl = torch.reduce_mean(kloldnew)
+    # meanent = torch.reduce_mean(ent)
+    # pol_entpen = (-args.entropy_coeff) * meanent
+
+    action_var = Variable(actions)
+    # compute probs from actions above
+    log_prob_cur = normal_log_density(action_var, action_means, action_log_stds, action_stds)
+
+    action_means_old, action_log_stds_old, action_stds_old, values_old = ac_net(Variable(states), old=True)
+    log_prob_old = normal_log_density(action_var, action_means_old, action_log_stds_old, action_stds_old)
+
+    # backup params after computing probs but before updating new params
+    ac_net.backup()
+
+    advantages = (advantages - advantages.mean()) / advantages.std()
+    advantages_var = Variable(advantages)
+
+    
+    ratio = torch.exp(log_prob_cur - log_prob_old) # pnew / pold
+    surr1 = ratio * advantages_var[:,0]
+    surr2 = torch.clamp(ratio, 1.0 - args.clip_epsilon, 1.0 + args.clip_epsilon) * advantages_var[:,0]
+    policy_surr = -torch.min(surr1, surr2).mean()
+
+    vf_loss1 = (values - targets).pow(2.)
+    vpredclipped = values_old + torch.clamp(values - values_old, -args.clip_epsilon, args.clip_epsilon)
+    vf_loss2 = (vpredclipped - targets).pow(2.)
+    vf_loss = 0.5 * torch.max(vf_loss1, vf_loss2).mean()
+
+    opt_ac.zero_grad()
+
+    total_loss = policy_surr + vf_loss
+    total_loss.backward()
+    torch.nn.utils.clip_grad_norm(ac_net.parameters(), 40)
+
+    ensure_shared_grads(ac_net, shared_model)
+    opt_ac.step()
+
+def train(rank,args,shared_model,opt_ac,can_save):
+    torch.manual_seed(args.seed+rank)
+    torch.set_default_tensor_type('torch.DoubleTensor')
+    num_inputs = 41 + 41
+    num_actions = 18
+    last_state = numpy.zeros(41)
+
+    if args.render and can_save:
+        env = RunEnv(visualize=True)
+    else:
+        env = RunEnv(visualize=False)
+
+    running_state = ZFilter((num_inputs,), clip=5)
+    running_reward = ZFilter((1,), demean=False, clip=10)
+    episode_lengths = []
+
+    PATH_TO_MODEL = '../models/'+str(args.bh)
+
+    ac_net = ActorCritic(num_inputs, num_actions)
+
+    for i_episode in count(1):
+        memory = Memory()
+        ac_net.load_state_dict(shared_model.state_dict())
+
+        num_steps = 0
+        reward_batch = 0
+        num_episodes = 0
+        while num_steps < args.batch_size:
+            #state = env.reset()
+            #print(num_steps)
+            state = env.reset(difficulty = 0)
+            state = numpy.array(state)
+            #global last_state
+            last_state = state
+            last_state,state = update_observation(last_state,state)
+            #print(state.shape[0])
+            #print(state[41])
+            state = running_state(state)
+
+            reward_sum = 0
+            for t in range(10000): # Don't infinite loop while learning
+                #print(t)
+                if args.use_sep_pol_val:
+                    action = select_action(state)
+                else:
+                    action = select_action_actor_critic(state,ac_net)
+                #print(action)
+                action = action.data[0].numpy()
+                #print(action)
+                #print("------------------------")
+                env.step(action)
+                #if done==False:
+                env.step(action)
+                #if done==False:
+                next_state, reward, done, _ = env.step(action)
+                next_state = numpy.array(next_state)
+                reward_sum += reward
+
+                last_state ,next_state = update_observation(last_state,next_state)
+                next_state = running_state(next_state)
+                #print(next_state[41:82])
+
+                mask = 1
+                if done:
+                    mask = 0
+
+                memory.push(state, np.array([action]), mask, next_state, reward)
+
+                #if args.render:
+                #    env.render()
+                if done:
+                    break
+
+                state = next_state
+            num_steps += (t-1)
+            num_episodes += 1
+            reward_batch += reward_sum
+
+        reward_batch /= num_episodes
+        batch = memory.sample()
+        
+        update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac)
+
+        '''
+        if i_episode % args.log_interval == 0:
+            print('Episode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
+                i_episode, reward_sum, reward_batch))
+        '''
+
+
+def test(rank,args,shared_model,opt_ac):
+    torch.manual_seed(args.seed+rank)
+    torch.set_default_tensor_type('torch.DoubleTensor')
+    num_inputs = 41 + 41
+    num_actions = 18
+    last_state = numpy.zeros(41)
+
+    if args.render:
+        env = RunEnv(visualize=True)
+    else:
+        env = RunEnv(visualize=False)
+
+    running_state = ZFilter((num_inputs,), clip=5)
+    running_reward = ZFilter((1,), demean=False, clip=10)
+    episode_lengths = []
+
+    PATH_TO_MODEL = '../models/'+str(args.bh)
+
+    ac_net = ActorCritic(num_inputs, num_actions)
+
+    for i_episode in count(1):
+        memory = Memory()
+        ac_net.load_state_dict(shared_model.state_dict())
+
+        num_steps = 0
+        reward_batch = 0
+        num_episodes = 0
+        while num_steps < args.batch_size:
+            #state = env.reset()
+            #print(num_steps)
+            state = env.reset(difficulty = 0)
+            state = numpy.array(state)
+            #global last_state
+            last_state = state
+            last_state,state = update_observation(last_state,state)
+            #print(state.shape[0])
+            #print(state[41])
+            state = running_state(state)
+
+            reward_sum = 0
+            for t in range(10000): # Don't infinite loop while learning
+                #print(t)
+                if args.use_sep_pol_val:
+                    action = select_action(state)
+                else:
+                    action = select_action_actor_critic(state,ac_net)
+                #print(action)
+                action = action.data[0].numpy()
+                #print(action)
+                #print("------------------------")
+                env.step(action)
+                #if done==False:
+                env.step(action)
+                #if done==False:
+                next_state, reward, done, _ = env.step(action)
+                next_state = numpy.array(next_state)
+                reward_sum += reward
+
+                last_state ,next_state = update_observation(last_state,next_state)
+                next_state = running_state(next_state)
+                #print(next_state[41:82])
+
+                mask = 1
+                if done:
+                    mask = 0
+
+                memory.push(state, np.array([action]), mask, next_state, reward)
+
+                #if args.render:
+                #    env.render()
+                if done:
+                    break
+
+                state = next_state
+            num_steps += (t-1)
+            num_episodes += 1
+            reward_batch += reward_sum
+
+        reward_batch /= num_episodes
+        batch = memory.sample()
+        
+        #update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac)
+        time.sleep(60)
+
+        if i_episode % args.log_interval == 0:
+            print('Episode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
+                i_episode, reward_sum, reward_batch))
+            #print('!!!!')
+
+        epoch = i_episode
+        if epoch%30==1:
+            save_model({
+                    'epoch': epoch ,
+                    'bh': args.bh,
+                    'state_dict': shared_model.state_dict(),
+                    'optimizer' : opt_ac.state_dict(),
+                },PATH_TO_MODEL,epoch)
+
