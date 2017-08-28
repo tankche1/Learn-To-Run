@@ -39,12 +39,48 @@ def save_model(model,PATH_TO_MODEL,epoch):
     torch.save(model,PATH_TO_MODEL+'/'+str(epoch)+'.t7')
     print('done.')
 
-
+'''
 def update_observation(last_state,state):
     len = state.shape[0]
     final = numpy.array([0.1]*82)
     final[0:41] = state[0:41]
     final[41:82] = (state - last_state)/0.01
+    #last_state = state
+    return state,final
+'''
+# 41 dim to 48 dim
+def update_observation(last_state,observation):
+    o = list(observation) # an array
+
+    px = o[1]
+    py = o[2]
+
+    pvx = o[4]
+    pvy = o[5]
+
+    o = o + [o[22+i*2+1] for i in range(7)] # a copy of original y, not relative y.
+
+    # x and y relative to pelvis
+    for i in range(7): # head pelvis torso, toes and taluses
+        o[22+i*2+0] -= px
+        o[22+i*2+1] -= py
+
+    o[18] -= px # mass pos xy made relative
+    o[19] -= py
+    o[20] -= pvx
+    o[21] -= pvy
+
+    o[38]= min(4,o[38]) # ball info are included later in the stage
+    # o[39]/=5
+    # o[40]/=5
+
+    o[1]=0 # abs value of pel x is not relevant
+
+    state = numpy.array(o)
+    final = numpy.array([0.1]*96)
+    final[0:48] = state[0:48]
+    #print(state,last_state)
+    final[48:96] = (state - last_state)/0.01
     #last_state = state
     return state,final
 
@@ -56,16 +92,22 @@ def select_action(state):
 
 def select_action_actor_critic(state,ac_net):
     state = torch.from_numpy(state).unsqueeze(0)
+    #print(state)
     action_mean, _, action_std, v = ac_net(Variable(state))
+
     action = torch.normal(action_mean, action_std)
+    #print(action_mean,action_std)
+
+    #action = torch.clamp(action,min= 0.0,max = 1.0)
     return action
 
 def normal_log_density(x, mean, log_std, std):
     var = std.pow(2)
     #print(x,mean,var,log_std,PI)
-    A = -(x - mean).pow(2) / (2 * var)
-    B = -0.5*math.log(2*3.1415926)
-    log_density = A + B - log_std
+    #A = -(x - mean).pow(2) / (2 * var)
+    #B = -0.5*math.log(2*3.1415926)
+    #log_density = A + B - log_std
+    log_density = -(x - mean).pow(2) / (2 * var) -0.5*math.log(2*3.1415926) - log_std
     #log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * torch.log(2 * Variable(PI)) - log_std
     return log_density.sum(1)
 
@@ -140,11 +182,12 @@ def update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac):
     opt_ac.step()
 
 def train(rank,args,shared_model,opt_ac,can_save):
+    best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
-    num_inputs = 41 + 41
+    num_inputs = args.feature
     num_actions = 18
-    last_state = numpy.zeros(41)
+    last_state = numpy.zeros(48)
 
     if args.render and can_save:
         env = RunEnv(visualize=True)
@@ -172,13 +215,14 @@ def train(rank,args,shared_model,opt_ac,can_save):
             state = env.reset(difficulty = 0)
             state = numpy.array(state)
             #global last_state
-            last_state = state
+            last_state,_ = update_observation(last_state,state)
             last_state,state = update_observation(last_state,state)
             #print(state.shape[0])
             #print(state[41])
             state = running_state(state)
 
             reward_sum = 0
+            #timer = time.time()
             for t in range(10000): # Don't infinite loop while learning
                 #print(t)
                 if args.use_sep_pol_val:
@@ -187,15 +231,23 @@ def train(rank,args,shared_model,opt_ac,can_save):
                     action = select_action_actor_critic(state,ac_net)
                 #print(action)
                 action = action.data[0].numpy()
+                if numpy.any(numpy.isnan(action)):
+                    print(state)
+                    print(action)
+                    print('ERROR')
+                    raise RuntimeError('action NaN problem')
                 #print(action)
                 #print("------------------------")
-                env.step(action)
-                #if done==False:
-                env.step(action)
-                #if done==False:
+                #timer = time.time()
+                if args.skip:
+                    #env.step(action)
+                    _,reward,_,_ = env.step(action)
+                    reward_sum += reward
                 next_state, reward, done, _ = env.step(action)
                 next_state = numpy.array(next_state)
                 reward_sum += reward
+                #print('env:')
+                #print(time.time()-timer)
 
                 last_state ,next_state = update_observation(last_state,next_state)
                 next_state = running_state(next_state)
@@ -215,26 +267,50 @@ def train(rank,args,shared_model,opt_ac,can_save):
                 state = next_state
             num_steps += (t-1)
             num_episodes += 1
+
             reward_batch += reward_sum
+
 
         reward_batch /= num_episodes
         batch = memory.sample()
         
+        #print('env:')
+        #print(time.time()-timer)
+
+        #timer = time.time()
         update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac)
+        #print('backpropagate:')
+        #print(time.time()-timer)
 
-        '''
-        if i_episode % args.log_interval == 0:
-            print('Episode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
+        epoch = i_episode
+        if (i_episode % args.log_interval == 0) and (rank == 0):
+            print('TrainEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
                 i_episode, reward_sum, reward_batch))
-        '''
+            if reward_batch > best_result:
+                best_result = reward_batch
+                save_model({
+                        'epoch': epoch ,
+                        'bh': args.bh,
+                        'state_dict': shared_model.state_dict(),
+                        'optimizer' : opt_ac.state_dict(),
+                    },PATH_TO_MODEL,'best')
 
-
+            if epoch%30==1:
+                save_model({
+                        'epoch': epoch ,
+                        'bh': args.bh,
+                        'state_dict': shared_model.state_dict(),
+                        'optimizer' : opt_ac.state_dict(),
+                    },PATH_TO_MODEL,epoch)
+        
+        
 def test(rank,args,shared_model,opt_ac):
+    best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
-    num_inputs = 41 + 41
+    num_inputs = args.feature
     num_actions = 18
-    last_state = numpy.zeros(41)
+    last_state = numpy.zeros(48)
 
     if args.render:
         env = RunEnv(visualize=True)
@@ -262,7 +338,8 @@ def test(rank,args,shared_model,opt_ac):
             state = env.reset(difficulty = 0)
             state = numpy.array(state)
             #global last_state
-            last_state = state
+            #last_state = state
+            last_state,_ = update_observation(last_state,state)
             last_state,state = update_observation(last_state,state)
             #print(state.shape[0])
             #print(state[41])
@@ -271,21 +348,36 @@ def test(rank,args,shared_model,opt_ac):
             reward_sum = 0
             for t in range(10000): # Don't infinite loop while learning
                 #print(t)
+                #timer = time.time()
                 if args.use_sep_pol_val:
                     action = select_action(state)
                 else:
                     action = select_action_actor_critic(state,ac_net)
+
                 #print(action)
                 action = action.data[0].numpy()
+                if numpy.any(numpy.isnan(action)):
+                    print(action)
+                    puts('ERROR')
+                    return
+                #print('NN take:')
+                #print(time.time()-timer)
                 #print(action)
                 #print("------------------------")
-                env.step(action)
-                #if done==False:
-                env.step(action)
-                #if done==False:
+
+                #timer = time.time()
+                if args.skip:
+                    #env.step(action)
+                    _,reward,_,_ = env.step(action)
+                    reward_sum += reward
                 next_state, reward, done, _ = env.step(action)
                 next_state = numpy.array(next_state)
                 reward_sum += reward
+
+                #print('env take:')
+                #print(time.time()-timer)
+
+                #timer = time.time()
 
                 last_state ,next_state = update_observation(last_state,next_state)
                 next_state = running_state(next_state)
@@ -295,7 +387,15 @@ def test(rank,args,shared_model,opt_ac):
                 if done:
                     mask = 0
 
+                #print('update take:')
+                #print(time.time()-timer)
+
+                #timer = time.time()
+
                 memory.push(state, np.array([action]), mask, next_state, reward)
+
+                #print('memory take:')
+                #print(time.time()-timer)
 
                 #if args.render:
                 #    env.render()
@@ -303,10 +403,13 @@ def test(rank,args,shared_model,opt_ac):
                     break
 
                 state = next_state
+                
             num_steps += (t-1)
             num_episodes += 1
+            #print(num_episodes)
             reward_batch += reward_sum
 
+        #print(num_episodes)
         reward_batch /= num_episodes
         batch = memory.sample()
         
@@ -314,11 +417,20 @@ def test(rank,args,shared_model,opt_ac):
         time.sleep(60)
 
         if i_episode % args.log_interval == 0:
-            print('Episode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
+            print('TestEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
                 i_episode, reward_sum, reward_batch))
             #print('!!!!')
 
         epoch = i_episode
+        if reward_batch > best_result:
+            best_result = reward_batch
+            save_model({
+                    'epoch': epoch ,
+                    'bh': args.bh,
+                    'state_dict': shared_model.state_dict(),
+                    'optimizer' : opt_ac.state_dict(),
+                },PATH_TO_MODEL,'best')
+
         if epoch%30==1:
             save_model({
                     'epoch': epoch ,

@@ -47,17 +47,17 @@ parser.add_argument('--tau', type=float, default=0.97, metavar='G',
 #                     help='max kl value (default: 1e-2)')
 # parser.add_argument('--damping', type=float, default=1e-1, metavar='G',
 #                     help='damping (default: 1e-1)')
-parser.add_argument('--seed', type=int, default=543, metavar='N',
+parser.add_argument('--seed', type=int, default=543, 
                     help='random seed (default: 1)')
-parser.add_argument('--batch-size', type=int, default=200, metavar='N',
+parser.add_argument('--batch-size', type=int, default=500, 
                     help='batch size (default: 200)')
 parser.add_argument('--render', action='store_true',
                     help='render the environment')
-parser.add_argument('--log-interval', type=int, default=1, metavar='N',
+parser.add_argument('--log-interval', type=int, default=1, 
                     help='interval between training status logs (default: 10)')
-parser.add_argument('--entropy-coeff', type=float, default=0.0, metavar='N',
+parser.add_argument('--entropy-coeff', type=float, default=0.0, 
                     help='coefficient for entropy cost')
-parser.add_argument('--clip-epsilon', type=float, default=0.2, metavar='N',
+parser.add_argument('--clip-epsilon', type=float, default=0.2, 
                     help='Clipping for PPO grad')
 parser.add_argument('--use-sep-pol-val', action='store_true',
                     help='whether to use combined policy and value nets')
@@ -65,15 +65,22 @@ parser.add_argument('--bh',default='origin',
                         help='bh')
 parser.add_argument('--resume', action='store_true',
                     help='loading the model')
-parser.add_argument('--num-processes', type=int, default=4, metavar='N',
+parser.add_argument('--num-processes', type=int, default=4, 
                     help='how many training processes to use (default: 4)')
+parser.add_argument('--skip', action='store_true',
+                    help='execute an action three times')
+parser.add_argument('--test', action='store_true',
+                    help='test ')
+parser.add_argument('--feature', type=int, default=96, 
+                    help='features num')
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
     os.environ['OMP_NUM_THREADS'] = '1'
     torch.manual_seed(args.seed)
 
-    num_inputs = 41 + 41
+    num_inputs = args.feature
     num_actions = 18
 
     ac_net = ActorCritic(num_inputs, num_actions)
@@ -81,7 +88,7 @@ if __name__ == '__main__':
 
     if args.resume:
         print("=> loading checkpoint ")
-        checkpoint = torch.load('../models/origin/181.t7')
+        checkpoint = torch.load('../models/96d/best.t7')
         #args.start_epoch = checkpoint['epoch']
         #best_prec1 = checkpoint['best_prec1']
         ac_net.load_state_dict(checkpoint['state_dict'])
@@ -96,9 +103,10 @@ if __name__ == '__main__':
 
     processes = []
 
-    p = mp.Process(target=test, args=(args.num_processes, args, ac_net, opt_ac))
-    p.start()
-    processes.append(p)
+    if args.test:
+        p = mp.Process(target=test, args=(args.num_processes, args, ac_net, opt_ac))
+        p.start()
+        processes.append(p)
 
     for rank in range(0, args.num_processes):
         can_save = False

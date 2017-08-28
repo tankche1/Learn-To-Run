@@ -17,6 +17,27 @@ for i in range(200):
     print(env.action_space.sample())
     print('-----------------------')
 '''
+
+import argparse
+import sys
+import math
+import os
+from collections import namedtuple
+from itertools import count
+
+import numpy as np
 import numpy
-A = [0.1]*60
-print(A)
+
+#import scipy.optimize
+
+import torch
+import torch.autograd as autograd
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torchvision.transforms as T
+from torch.autograd import Variable
+
+for i in count(1):
+    print(i)
+print(count(1))

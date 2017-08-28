@@ -1,22 +1,48 @@
 '''
 from osim.env import RunEnv
 import scipy
+from tqdm import tqdm
 
 env = RunEnv(visualize=False)
 observation = env.reset(difficulty = 0)
-for i in range(200):
+
+for i in tqdm(range(50000)):
     observation, reward, done, info = env.step(env.action_space.sample())
-    print(type(observation))
-    print(len(observation))
-    print(type(reward))
-    print(reward)
-    print(type(done))
-    print(done)
-    print(type(info))
-    print(info)
-    print(type(env.action_space.sample()))
-    print(env.action_space.sample())
-    print('-----------------------')
+    if done == True:
+        print('done')
+        env.reset(difficulty=0)
+    #print(type(observation))
+    #print(len(observation))
+    #print(type(reward))
+    #print(reward)
+    #print(type(done))
+    #print(done)
+    #print(type(info))
+    #print(info)
+    #print(type(env.action_space.sample()))
+    #print(env.action_space.sample())
+    #print('-----------------------')
+'''
+#state = [1,2,3]
+#import torch
+#print(torch.Tensor(state))
+'''
+import torch 
+A =torch.randn(3,3)
+A[0][0]=2
+A[0][1]=-1
+print(A)
+print(torch.clamp(A,min=0,max=1))
+
+'''
+#import numpy
+#A = numpy.array([2,3])
+#print(list(A))
+'''
+for a in range(10):
+    haha = 1
+print(a-1)
+'''
 '''
 import torch
 import math
@@ -38,3 +64,5 @@ B = -0.5*math.log(2*3.1415926)
 print(A,B,log_std)
 log_density =  A + B - log_std
 print(log_density)
+'''
+
