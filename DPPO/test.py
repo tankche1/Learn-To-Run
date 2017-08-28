@@ -84,7 +84,7 @@ def test(rank, params, shared_model, shared_obs_stats, test_n):
                 save_model({
                             'epoch': epoch ,
                             'bh': params.bh,
-                            'state_dict': shared_model.state_dict(),
+                            'state_dict': model.state_dict(),
                             #'optimizer' : shared_obs_stats.state_dict(),
                         },PATH_TO_MODEL,'best')
 
@@ -92,7 +92,7 @@ def test(rank, params, shared_model, shared_obs_stats, test_n):
                 save_model({
                             'epoch': epoch ,
                             'bh': params.bh,
-                            'state_dict': shared_model.state_dict(),
+                            'state_dict': model.state_dict(),
                             #'optimizer' : shared_obs_stats.state_dict(),
                         },PATH_TO_MODEL,epoch)
 
