@@ -39,6 +39,7 @@ def save_model(model,PATH_TO_MODEL,epoch):
     torch.save(model,PATH_TO_MODEL+'/'+str(epoch)+'.t7')
     print('done.')
 
+
 '''
 def update_observation(last_state,state):
     len = state.shape[0]
@@ -202,6 +203,8 @@ def train(rank,args,shared_model,opt_ac,can_save):
 
     ac_net = ActorCritic(num_inputs, num_actions)
 
+    start_time = time.time()
+
     for i_episode in count(1):
         memory = Memory()
         ac_net.load_state_dict(shared_model.state_dict())
@@ -209,14 +212,16 @@ def train(rank,args,shared_model,opt_ac,can_save):
         num_steps = 0
         reward_batch = 0
         num_episodes = 0
+        #Tot_loss = 0
+        #Tot_num =
         while num_steps < args.batch_size:
             #state = env.reset()
             #print(num_steps)
             state = env.reset(difficulty = 0)
             state = numpy.array(state)
             #global last_state
-            last_state,_ = update_observation(last_state,state)
-            last_state,state = update_observation(last_state,state)
+            #last_state,_ = update_observation(last_state,state)
+            #last_state,state = update_observation(last_state,state)
             #print(state.shape[0])
             #print(state[41])
             state = running_state(state)
@@ -249,7 +254,7 @@ def train(rank,args,shared_model,opt_ac,can_save):
                 #print('env:')
                 #print(time.time()-timer)
 
-                last_state ,next_state = update_observation(last_state,next_state)
+                #last_state ,next_state = update_observation(last_state,next_state)
                 next_state = running_state(next_state)
                 #print(next_state[41:82])
 
@@ -284,6 +289,7 @@ def train(rank,args,shared_model,opt_ac,can_save):
 
         epoch = i_episode
         if (i_episode % args.log_interval == 0) and (rank == 0):
+
             print('TrainEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
                 i_episode, reward_sum, reward_batch))
             if reward_batch > best_result:
@@ -291,7 +297,7 @@ def train(rank,args,shared_model,opt_ac,can_save):
                 save_model({
                         'epoch': epoch ,
                         'bh': args.bh,
-                        'state_dict': shared_model.state_dict(),
+                        'state_dict': ac_net.state_dict(),
                         'optimizer' : opt_ac.state_dict(),
                     },PATH_TO_MODEL,'best')
 
@@ -299,7 +305,7 @@ def train(rank,args,shared_model,opt_ac,can_save):
                 save_model({
                         'epoch': epoch ,
                         'bh': args.bh,
-                        'state_dict': shared_model.state_dict(),
+                        'state_dict': ac_net.state_dict(),
                         'optimizer' : opt_ac.state_dict(),
                     },PATH_TO_MODEL,epoch)
         
@@ -310,7 +316,7 @@ def test(rank,args,shared_model,opt_ac):
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
-    last_state = numpy.zeros(48)
+    last_state = numpy.zeros(41)
 
     if args.render:
         env = RunEnv(visualize=True)
@@ -324,6 +330,8 @@ def test(rank,args,shared_model,opt_ac):
     PATH_TO_MODEL = '../models/'+str(args.bh)
 
     ac_net = ActorCritic(num_inputs, num_actions)
+
+    start_time = time.time()
 
     for i_episode in count(1):
         memory = Memory()
@@ -339,8 +347,8 @@ def test(rank,args,shared_model,opt_ac):
             state = numpy.array(state)
             #global last_state
             #last_state = state
-            last_state,_ = update_observation(last_state,state)
-            last_state,state = update_observation(last_state,state)
+            #last_state,_ = update_observation(last_state,state)
+            #last_state,state = update_observation(last_state,state)
             #print(state.shape[0])
             #print(state[41])
             state = running_state(state)
@@ -379,7 +387,7 @@ def test(rank,args,shared_model,opt_ac):
 
                 #timer = time.time()
 
-                last_state ,next_state = update_observation(last_state,next_state)
+                #last_state ,next_state = update_observation(last_state,next_state)
                 next_state = running_state(next_state)
                 #print(next_state[41:82])
 
@@ -417,8 +425,18 @@ def test(rank,args,shared_model,opt_ac):
         time.sleep(60)
 
         if i_episode % args.log_interval == 0:
-            print('TestEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
-                i_episode, reward_sum, reward_batch))
+            File = open(PATH_TO_MODEL + '/record.txt', 'a+')
+            File.write("Time {}, episode reward {}, Average reward {}".format(
+                time.strftime("%Hh %Mm %Ss",
+                              time.gmtime(time.time() - start_time)),
+                reward_sum, reward_batch))
+            File.close()
+            #print('TestEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
+            #    i_episode, reward_sum, reward_batch))
+            print("Time {}, episode reward {}, Average reward {}".format(
+                time.strftime("%Hh %Mm %Ss",
+                              time.gmtime(time.time() - start_time)),
+                reward_sum, reward_batch))
             #print('!!!!')
 
         epoch = i_episode

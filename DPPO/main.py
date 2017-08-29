@@ -20,12 +20,12 @@ import argparse
 class Params():
     def __init__(self,args):
         self.batch_size = 1000
-        #self.lr = 3e-4
-        self.lr = 1e-4
-        #self.gamma = 0.99
-        self.gamma = args.gamma
-        #self.gae_param = 0.95
-        self.gae_param = args.tau
+        self.lr = 3e-4
+        #self.lr = args.lr
+        self.gamma = 0.99
+        #self.gamma = args.gamma
+        self.gae_param = 0.95
+        #self.gae_param = args.tau
 
         self.clip = args.clip_epsilon
 
@@ -82,8 +82,8 @@ parser.add_argument('--bh',default='origin',
                         help='bh')
 parser.add_argument('--resume', action='store_true',
                     help='loading the model')
-parser.add_argument('--num-processes', type=int, default=8, 
-                    help='how many training processes to use (default: 8)')
+parser.add_argument('--num-processes', type=int, default=4, 
+                    help='how many training processes to use (default: 4)')
 parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',

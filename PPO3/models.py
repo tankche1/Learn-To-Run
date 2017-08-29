@@ -15,7 +15,6 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
         self.affine1 = nn.Linear(num_inputs, hidden)
         self.affine2 = nn.Linear(hidden, hidden)
-        #self.affine3 = nn.Linear(hidden, hidden/2)
 
         self.action_mean = nn.Linear(hidden, num_outputs)
         self.action_mean.weight.data.mul_(0.1)
@@ -33,15 +32,9 @@ class ActorCritic(nn.Module):
             self.module_list_old[i] = copy.deepcopy(self.module_list_current[i])
 
     def forward(self, x, old=False):
-        
         if old:
-            #x = F.leaky_relu(self.module_list_old[0](x))
-            #x = F.leaky_relu(self.module_list_old[1](x))
-            #x = F.leaky_relu(self.module_list_old[2](x))
-
             x = F.tanh(self.module_list_old[0](x))
             x = F.tanh(self.module_list_old[1](x))
-            #x = F.tanh(self.module_list_old[2](x))
 
             action_mean = self.module_list_old[2](x)
             action_log_std = self.module_list_old[3].expand_as(action_mean)
@@ -51,12 +44,6 @@ class ActorCritic(nn.Module):
         else:
             x = F.tanh(self.affine1(x))
             x = F.tanh(self.affine2(x))
-            #x = F.tanh(self.affine3(x))
-
-            #x = F.leaky_relu(self.affine1(x))
-            #x = F.leaky_relu(self.affine2(x))
-            #x = F.leaky_relu(self.affine3(x))
-
 
             action_mean = self.action_mean(x)
             action_log_std = self.action_log_std.expand_as(action_mean)
@@ -65,7 +52,6 @@ class ActorCritic(nn.Module):
             value = self.value_head(x)
 
         return action_mean, action_log_std, action_std, value
-
 
 class Policy(nn.Module):
 

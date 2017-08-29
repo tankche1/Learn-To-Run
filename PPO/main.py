@@ -37,6 +37,8 @@ import time
 parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
 parser.add_argument('--gamma', type=float, default=0.995, metavar='G',
                     help='discount factor (default: 0.995)')
+parser.add_argument('--lr', type=float, default=1e-3, 
+                    help='learning rate (default: 1e-3)')
 parser.add_argument('--env-name', default="Reacher-v1", metavar='G',
                     help='name of the environment to run')
 parser.add_argument('--tau', type=float, default=0.97, metavar='G',
@@ -71,7 +73,7 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=96, 
+parser.add_argument('--feature', type=int, default=41, 
                     help='features num')
 
 
@@ -84,15 +86,16 @@ if __name__ == '__main__':
     num_actions = 18
 
     ac_net = ActorCritic(num_inputs, num_actions)
-    opt_ac = my_optim.SharedAdam(ac_net.parameters(), lr=0.001)
+    opt_ac = my_optim.SharedAdam(ac_net.parameters(), lr=args.lr)
 
     if args.resume:
         print("=> loading checkpoint ")
-        checkpoint = torch.load('../models/96d/best.t7')
+        checkpoint = torch.load('../models/kankan/best.t7')
         #args.start_epoch = checkpoint['epoch']
         #best_prec1 = checkpoint['best_prec1']
         ac_net.load_state_dict(checkpoint['state_dict'])
-        opt_ac.load_state_dict(checkpoint['optimizer'])
+        #opt_ac.load_state_dict(checkpoint['optimizer'])
+        print(ac_net)
         print("=> loaded checkpoint  (epoch {})"
                 .format(checkpoint['epoch']))
 

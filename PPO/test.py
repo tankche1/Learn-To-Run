@@ -43,7 +43,7 @@ for a in range(10):
     haha = 1
 print(a-1)
 '''
-'''
+
 import torch
 import math
 from torch.autograd import Variable
@@ -53,16 +53,31 @@ mean = torch.ones(212,18)
 var = torch.ones(212,18)
 log_std = torch.ones(212,18)
 PI = torch.DoubleTensor([3.1415926])
+
 x = Variable(x)
 mean = Variable(mean)
 var = Variable(var)
 log_std = Variable(log_std)
-PI = Variable(PI)
+
+log_density = -(x - mean).pow(2) / (2 * var) -0.5*math.log(2*3.1415926) - log_std
+print(log_density)
+
+#PI = Variable(PI)
+x = torch.ones(212,18)
+mean = torch.ones(212,18)
+var = torch.ones(212,18)
+log_std = torch.ones(212,18)
+PI = torch.DoubleTensor([3.1415926])
+x = Variable(x)
+mean = Variable(mean)
+var = Variable(var)
+log_std = Variable(log_std)
+
 A = -(x - mean).pow(2) / (2 * var) 
 #B = - 0.5 * torch.log(2 * PI)
 B = -0.5*math.log(2*3.1415926)
-print(A,B,log_std)
+#print(A,B,log_std)
 log_density =  A + B - log_std
 print(log_density)
-'''
+
 
