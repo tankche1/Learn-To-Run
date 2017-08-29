@@ -1,4 +1,4 @@
-
+'''
 import gym
 env = gym.make('InvertedPendulum-v1')
 observation = env.reset()
@@ -9,3 +9,9 @@ for _ in range(1000):
   print(type(observation))
   print(type(reward))
   print(type(done))
+'''
+
+import torch
+from torch.autograd import Variable
+A =Variable(torch.ones(4,4))
+print(A/4)
