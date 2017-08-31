@@ -113,21 +113,6 @@ if __name__ == '__main__':
     shared_grad_buffers = Shared_grad_buffers(ac_net)
     shared_obs_stats = Shared_obs_stats(num_inputs)
 
-    '''
-    processes = []
-    p = mp.Process(target=test, args=(params.num_processes, params, shared_model, shared_obs_stats, test_n))
-    p.start()
-    processes.append(p)
-    p = mp.Process(target=chief, args=(params.num_processes, params, traffic_light, counter, shared_model, shared_grad_buffers, optimizer))
-    p.start()
-    processes.append(p)
-    for rank in range(0, params.num_processes):
-        p = mp.Process(target=train, args=(rank, params, traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats, test_n))
-        p.start()
-        processes.append(p)
-    for p in processes:
-        p.join()
-    '''
     processes = []
 
     if args.test:

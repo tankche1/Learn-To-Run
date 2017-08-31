@@ -178,17 +178,12 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             state = env.reset(difficulty = 0)
             state = numpy.array(state)
 
-            state = running_state(state)
-            #global last_state
-            #last_state,_ = update_observation(last_state,state)
-            #last_state,state = update_observation(last_state,state)
-            #print(state.shape[0])
-            #print(state[41])
+            #state = running_state(state)
 
-            #state = Variable(torch.Tensor(state).unsqueeze(0))
-            #shared_obs_stats.observes(state)
-            #state = shared_obs_stats.normalize(state)
-            #state = state.data[0].numpy()
+            state = Variable(torch.Tensor(state).unsqueeze(0))
+            shared_obs_stats.observes(state)
+            state = shared_obs_stats.normalize(state)
+            state = state.data[0].numpy()
 
             #print(state)
 
@@ -229,12 +224,12 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
 
                 #last_state ,next_state = update_observation(last_state,next_state)
 
-                next_state = running_state(next_state)
+                #next_state = running_state(next_state)
 
-                #next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
-                #shared_obs_stats.observes(next_state)
-                #next_state = shared_obs_stats.normalize(next_state)
-                #next_state = next_state.data[0].numpy()
+                next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
+                shared_obs_stats.observes(next_state)
+                next_state = shared_obs_stats.normalize(next_state)
+                next_state = next_state.data[0].numpy()
 
                 #print(next_state[41:82])
 
@@ -275,8 +270,8 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                 i_episode, reward_sum, reward_batch))
 
         # wait for a new signal to continue
-        while traffic_light.get() == signal_init:
-            pass
+        #while traffic_light.get() == signal_init:
+        #    pass
 
         
         
