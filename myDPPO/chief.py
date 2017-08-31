@@ -5,7 +5,7 @@ from torch.autograd import Variable
 import time
 from running_state import ZFilter
 
-def chief(args, rank, traffic_light, counter, shared_model, shared_grad_buffers, optimizer,running_state):
+def chief(args, rank, traffic_light, counter, shared_model, shared_grad_buffers, optimizer):
 
     while True:
         time.sleep(1)

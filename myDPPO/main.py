@@ -22,7 +22,7 @@ import torch.multiprocessing as mp
 
 from models import Policy, Value, ActorCritic
 from replay_memory import Memory
-from running_state import ZFilter
+from running_state import Shared_obs_stats
 from train import train,test
 
 from osim.env import RunEnv
@@ -109,8 +109,9 @@ if __name__ == '__main__':
 
     
     #opt_ac.share_memory()
-    running_state = ZFilter((num_inputs,), clip=5)
+    #running_state = ZFilter((num_inputs,), clip=5)
     shared_grad_buffers = Shared_grad_buffers(ac_net)
+    shared_obs_stats = Shared_obs_stats(num_inputs)
 
     '''
     processes = []
@@ -129,17 +130,18 @@ if __name__ == '__main__':
     '''
     processes = []
 
-    #if args.test:
-    p = mp.Process(target=test, args=(args.num_processes, args, ac_net, running_state, opt_ac))
-    p.start()
-    processes.append(p)
+    if args.test:
+        p = mp.Process(target=test, args=(args.num_processes, args, ac_net, shared_obs_stats, opt_ac))
+        p.start()
+        processes.append(p)
 
-    p = mp.Process(target=chief, args=(args, args.num_processes+1, traffic_light, counter, ac_net,shared_grad_buffers, opt_ac, running_state))
-    p.start()
-    processes.append(p)
+
+    #p = mp.Process(target=chief, args=(args, args.num_processes+1, traffic_light, counter, ac_net,shared_grad_buffers, opt_ac))
+    #p.start()
+    #processes.append(p)
 
     for rank in range(0, args.num_processes):
-        p = mp.Process(target=train, args=(rank, args, traffic_light, counter,  ac_net, shared_grad_buffers, running_state))
+        p = mp.Process(target=train, args=(rank, args, traffic_light, counter,  ac_net, shared_grad_buffers, shared_obs_stats,opt_ac))
         p.start()
         processes.append(p)
     for p in processes:

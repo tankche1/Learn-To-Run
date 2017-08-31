@@ -1,7 +1,8 @@
 from collections import deque
 
 import numpy as np
-
+import torch
+from torch.autograd import Variable
 
 # from https://github.com/joschu/modular_rl
 # http://www.johndcook.com/blog/standard_deviation/
@@ -70,3 +71,25 @@ class ZFilter:
 
     def output_shape(self, input_space):
         return input_space.shape
+
+
+class Shared_obs_stats():
+    def __init__(self, num_inputs):
+        self.n = torch.zeros(num_inputs).share_memory_()
+        self.mean = torch.zeros(num_inputs).share_memory_()
+        self.mean_diff = torch.zeros(num_inputs).share_memory_()
+        self.var = torch.zeros(num_inputs).share_memory_()
+
+    def observes(self, obs):
+        # observation mean var updates
+        x = obs.data.squeeze()
+        self.n += 1.
+        last_mean = self.mean.clone()
+        self.mean += (x-self.mean)/self.n
+        self.mean_diff += (x-last_mean)*(x-self.mean)
+        self.var = torch.clamp(self.mean_diff/self.n, min=1e-2)
+
+    def normalize(self, inputs):
+        obs_mean = Variable(self.mean.unsqueeze(0).expand_as(inputs))
+        obs_std = Variable(torch.sqrt(self.var).unsqueeze(0).expand_as(inputs))
+        return torch.clamp((inputs-obs_mean)/obs_std, -10., 10.)

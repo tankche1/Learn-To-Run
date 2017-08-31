@@ -63,16 +63,11 @@ class Shared_grad_buffers():
     def add_gradient(self, model):
         for name, p in model.named_parameters():
             self.grads[name+'_grad'] += p.grad.data
-            print(name,p.grad.data)
+            #print(name,p.grad.data)
 
     def reset(self):
         for name,grad in self.grads.items():
             self.grads[name].fill_(0)
-
-
-
-
-
 
 class Policy(nn.Module):
 
