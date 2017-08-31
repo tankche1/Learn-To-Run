@@ -121,9 +121,9 @@ if __name__ == '__main__':
         processes.append(p)
 
 
-    #p = mp.Process(target=chief, args=(args, args.num_processes+1, traffic_light, counter, ac_net,shared_grad_buffers, opt_ac))
-    #p.start()
-    #processes.append(p)
+    p = mp.Process(target=chief, args=(args, args.num_processes+1, traffic_light, counter, ac_net,shared_grad_buffers, opt_ac))
+    p.start()
+    processes.append(p)
 
     for rank in range(0, args.num_processes):
         p = mp.Process(target=train, args=(rank, args, traffic_light, counter,  ac_net, shared_grad_buffers, shared_obs_stats,opt_ac))

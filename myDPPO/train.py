@@ -126,14 +126,14 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     vf_loss2 = (vpredclipped - targets).pow(2.)
     vf_loss = 0.5 * torch.max(vf_loss1, vf_loss2).mean()
 
-    opt_ac.zero_grad()
+    #opt_ac.zero_grad()
 
     total_loss = policy_surr + vf_loss
     total_loss.backward(retain_variables=True)
     torch.nn.utils.clip_grad_norm(ac_net.parameters(), 40)
 
     #ensure_shared_grads(ac_net, shared_model)
-    opt_ac.step()
+    #opt_ac.step()
 
 def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats ,opt_ac):
     best_result =-1000 
@@ -270,8 +270,8 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                 i_episode, reward_sum, reward_batch))
 
         # wait for a new signal to continue
-        #while traffic_light.get() == signal_init:
-        #    pass
+        while traffic_light.get() == signal_init:
+            pass
 
         
         
