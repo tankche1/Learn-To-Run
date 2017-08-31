@@ -61,7 +61,7 @@ def train(rank, params, traffic_light, counter, shared_model, shared_grad_buffer
     state = env.reset(difficulty=0)
     state = numpy.array(state)
     state = Variable(torch.Tensor(state).unsqueeze(0))
-    done = True
+    done = True 
 
     episode_length = 0
     while True:

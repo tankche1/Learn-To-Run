@@ -26,8 +26,11 @@ from running_state import ZFilter
 from train import train,test
 
 from osim.env import RunEnv
-import my_optim
 import time
+from utils import TrafficLight, Counter
+from chief import chief
+
+from models import Shared_grad_buffers
 
 # from utils import *
 
@@ -51,7 +54,7 @@ parser.add_argument('--tau', type=float, default=0.97, metavar='G',
 #                     help='damping (default: 1e-1)')
 parser.add_argument('--seed', type=int, default=543, 
                     help='random seed (default: 1)')
-parser.add_argument('--batch-size', type=int, default=500, 
+parser.add_argument('--batch-size', type=int, default=200, 
                     help='batch size (default: 200)')
 parser.add_argument('--render', action='store_true',
                     help='render the environment')
@@ -85,8 +88,11 @@ if __name__ == '__main__':
     num_inputs = args.feature
     num_actions = 18
 
+    traffic_light = TrafficLight()
+    counter = Counter()
+
     ac_net = ActorCritic(num_inputs, num_actions)
-    #opt_ac = my_optim.SharedAdam(ac_net.parameters(), lr=args.lr)
+    opt_ac = optim.Adam(ac_net.parameters(), lr=args.lr)
 
     if args.resume:
         print("=> loading checkpoint ")
@@ -94,30 +100,46 @@ if __name__ == '__main__':
         #args.start_epoch = checkpoint['epoch']
         #best_prec1 = checkpoint['best_prec1']
         ac_net.load_state_dict(checkpoint['state_dict'])
-        #opt_ac.load_state_dict(checkpoint['optimizer'])
+        opt_ac.load_state_dict(checkpoint['optimizer'])
         print(ac_net)
         print("=> loaded checkpoint  (epoch {})"
                 .format(checkpoint['epoch']))
 
     ac_net.share_memory()
-    opt_ac = optim.Adam(ac_net.parameters(), lr=args.lr)
-    opt_ac.share_memory()
-    shared_grad_buffers = Shared_grad_buffers(shared_model)
+
     
+    #opt_ac.share_memory()
+    running_state = ZFilter((num_inputs,), clip=5)
+    shared_grad_buffers = Shared_grad_buffers(ac_net)
 
+    '''
     processes = []
-
-    if args.test:
-        p = mp.Process(target=test, args=(args.num_processes, args, ac_net, opt_ac))
+    p = mp.Process(target=test, args=(params.num_processes, params, shared_model, shared_obs_stats, test_n))
+    p.start()
+    processes.append(p)
+    p = mp.Process(target=chief, args=(params.num_processes, params, traffic_light, counter, shared_model, shared_grad_buffers, optimizer))
+    p.start()
+    processes.append(p)
+    for rank in range(0, params.num_processes):
+        p = mp.Process(target=train, args=(rank, params, traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats, test_n))
         p.start()
         processes.append(p)
+    for p in processes:
+        p.join()
+    '''
+    processes = []
+
+    #if args.test:
+    p = mp.Process(target=test, args=(args.num_processes, args, ac_net, running_state, opt_ac))
+    p.start()
+    processes.append(p)
+
+    p = mp.Process(target=chief, args=(args, args.num_processes+1, traffic_light, counter, ac_net,shared_grad_buffers, opt_ac, running_state))
+    p.start()
+    processes.append(p)
 
     for rank in range(0, args.num_processes):
-        can_save = False
-        if rank==0:
-            can_save = True
-
-        p = mp.Process(target=train, args=(rank, args, ac_net, opt_ac, can_save))
+        p = mp.Process(target=train, args=(rank, args, traffic_light, counter,  ac_net, shared_grad_buffers, running_state))
         p.start()
         processes.append(p)
     for p in processes:

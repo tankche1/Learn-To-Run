@@ -26,6 +26,7 @@ from running_state import ZFilter
 from osim.env import RunEnv
 import math
 import time
+from models import Shared_grad_buffers
 
 # from utils import *
 
@@ -39,51 +40,6 @@ def save_model(model,PATH_TO_MODEL,epoch):
     torch.save(model,PATH_TO_MODEL+'/'+str(epoch)+'.t7')
     print('done.')
 
-
-'''
-def update_observation(last_state,state):
-    len = state.shape[0]
-    final = numpy.array([0.1]*82)
-    final[0:41] = state[0:41]
-    final[41:82] = (state - last_state)/0.01
-    #last_state = state
-    return state,final
-'''
-# 41 dim to 48 dim
-def update_observation(last_state,observation):
-    o = list(observation) # an array
-
-    px = o[1]
-    py = o[2]
-
-    pvx = o[4]
-    pvy = o[5]
-
-    o = o + [o[22+i*2+1] for i in range(7)] # a copy of original y, not relative y.
-
-    # x and y relative to pelvis
-    for i in range(7): # head pelvis torso, toes and taluses
-        o[22+i*2+0] -= px
-        o[22+i*2+1] -= py
-
-    o[18] -= px # mass pos xy made relative
-    o[19] -= py
-    o[20] -= pvx
-    o[21] -= pvy
-
-    o[38]= min(4,o[38]) # ball info are included later in the stage
-    # o[39]/=5
-    # o[40]/=5
-
-    o[1]=0 # abs value of pel x is not relevant
-
-    state = numpy.array(o)
-    final = numpy.array([0.1]*96)
-    final[0:48] = state[0:48]
-    #print(state,last_state)
-    final[48:96] = (state - last_state)/0.01
-    #last_state = state
-    return state,final
 
 def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
@@ -104,12 +60,8 @@ def select_action_actor_critic(state,ac_net):
 
 def normal_log_density(x, mean, log_std, std):
     var = std.pow(2)
-    #print(x,mean,var,log_std,PI)
-    #A = -(x - mean).pow(2) / (2 * var)
-    #B = -0.5*math.log(2*3.1415926)
-    #log_density = A + B - log_std
-    log_density = -(x - mean).pow(2) / (2 * var) -0.5*math.log(2*3.1415926) - log_std
-    #log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * torch.log(2 * Variable(PI)) - log_std
+    log_density = -(x - mean).pow(2) / (
+        2 * var) - 0.5 * math.log(2 * math.pi) - log_std
     return log_density.sum(1)
 
 def ensure_shared_grads(model, shared_model):
@@ -119,7 +71,8 @@ def ensure_shared_grads(model, shared_model):
             return
         shared_param._grad = param.grad
 
-def update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac):
+def update_params_actor_critic(batch,args,ac_net):
+    #ac_net.zero_grad()
     rewards = torch.Tensor(batch.reward)
     masks = torch.Tensor(batch.mask)
     actions = torch.Tensor(np.concatenate(batch.action, 0))
@@ -173,42 +126,42 @@ def update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac):
     vf_loss2 = (vpredclipped - targets).pow(2.)
     vf_loss = 0.5 * torch.max(vf_loss1, vf_loss2).mean()
 
-    opt_ac.zero_grad()
+    #opt_ac.zero_grad()
 
     total_loss = policy_surr + vf_loss
-    total_loss.backward()
+    total_loss.backward(retain_variables=True)
     torch.nn.utils.clip_grad_norm(ac_net.parameters(), 40)
 
-    ensure_shared_grads(ac_net, shared_model)
-    opt_ac.step()
+    #ensure_shared_grads(ac_net, shared_model)
+    #opt_ac.step()
 
-def train(rank,args,shared_model,opt_ac,can_save):
+def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, AA):
     best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
-    last_state = numpy.zeros(48)
+    #last_state = numpy.zeros(48)
 
-    if args.render and can_save:
-        env = RunEnv(visualize=True)
-    else:
-        env = RunEnv(visualize=False)
+    env = RunEnv(visualize=False)
 
-    running_state = ZFilter((num_inputs,), clip=5)
-    running_reward = ZFilter((1,), demean=False, clip=10)
+    #running_state = ZFilter((num_inputs,), clip=5)
+    #running_reward = ZFilter((1,), demean=False, clip=10)
     episode_lengths = []
 
     PATH_TO_MODEL = '../models/'+str(args.bh)
 
     ac_net = ActorCritic(num_inputs, num_actions)
 
+    running_state = ZFilter((num_inputs,), clip=5)
+
     start_time = time.time()
 
     for i_episode in count(1):
+
+        signal_init = traffic_light.get()
         memory = Memory()
         ac_net.load_state_dict(shared_model.state_dict())
-        ac_net.zero_grad()
 
         num_steps = 0
         reward_batch = 0
@@ -284,51 +237,44 @@ def train(rank,args,shared_model,opt_ac,can_save):
         #print(time.time()-timer)
 
         #timer = time.time()
-        update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac)
-        #print('backpropagate:')
-        #print(time.time()-timer)
+        update_params_actor_critic(batch,args,ac_net)
+        shared_grad_buffers.add_gradient(ac_net)
+
+        counter.increment()
 
         epoch = i_episode
         if (i_episode % args.log_interval == 0) and (rank == 0):
 
             print('TrainEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
                 i_episode, reward_sum, reward_batch))
-            if reward_batch > best_result:
-                best_result = reward_batch
-                save_model({
-                        'epoch': epoch ,
-                        'bh': args.bh,
-                        'state_dict': ac_net.state_dict(),
-                        'optimizer' : opt_ac.state_dict(),
-                    },PATH_TO_MODEL,'best')
 
-            if epoch%30==1:
-                save_model({
-                        'epoch': epoch ,
-                        'bh': args.bh,
-                        'state_dict': ac_net.state_dict(),
-                        'optimizer' : opt_ac.state_dict(),
-                    },PATH_TO_MODEL,epoch)
+        # wait for a new signal to continue
+        while traffic_light.get() == signal_init:
+            pass
+
         
         
-def test(rank,args,shared_model,opt_ac):
+def test(rank, args,shared_model, running_state, opt_ac):
     best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
-    last_state = numpy.zeros(41)
+    #last_state = numpy.zeros(41)
 
     if args.render:
         env = RunEnv(visualize=True)
     else:
         env = RunEnv(visualize=False)
 
-    running_state = ZFilter((num_inputs,), clip=5)
-    running_reward = ZFilter((1,), demean=False, clip=10)
+    #running_state = ZFilter((num_inputs,), clip=5)
+    #running_reward = ZFilter((1,), demean=False, clip=10)
     episode_lengths = []
 
     PATH_TO_MODEL = '../models/'+str(args.bh)
+
+    if not os.path.exists(PATH_TO_MODEL):
+        os.mkdir(PATH_TO_MODEL)
 
     ac_net = ActorCritic(num_inputs, num_actions)
 

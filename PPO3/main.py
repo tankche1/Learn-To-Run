@@ -22,6 +22,7 @@ from torch.autograd import Variable
 from models import Policy, Value, ActorCritic
 from replay_memory import Memory
 from running_state import ZFilter
+import math
 
 from osim.env import RunEnv
 
@@ -31,6 +32,8 @@ torch.set_default_tensor_type('torch.DoubleTensor')
 PI = torch.DoubleTensor([3.1415926])
 
 parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
+parser.add_argument('--lr', type=float, default=1e-3, 
+                    help='learning rate (default: 1e-3)')
 parser.add_argument('--gamma', type=float, default=0.995, metavar='G',
                     help='discount factor (default: 0.995)')
 parser.add_argument('--env-name', default="Reacher-v1", metavar='G',
@@ -107,11 +110,11 @@ else:
     if args.use_sep_pol_val:
         policy_net = Policy(num_inputs, num_actions)
         value_net = Value(num_inputs)
-        opt_policy = optim.Adam(policy_net.parameters(), lr=0.001)
-        opt_value = optim.Adam(value_net.parameters(), lr=0.001)
+        opt_policy = optim.Adam(policy_net.parameters(), lr=args.lr)
+        opt_value = optim.Adam(value_net.parameters(), lr=args.lr)
     else:
         ac_net = ActorCritic(num_inputs, num_actions)
-        opt_ac = optim.Adam(ac_net.parameters(), lr=0.001)
+        opt_ac = optim.Adam(ac_net.parameters(), lr=args.lr)
 
 def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
@@ -127,8 +130,15 @@ def select_action_actor_critic(state):
 
 def normal_log_density(x, mean, log_std, std):
     var = std.pow(2)
+    log_density = -(x - mean).pow(2) / (
+        2 * var) - 0.5 * math.log(2 * math.pi) - log_std
+    return log_density.sum(1)
+'''
+def normal_log_density(x, mean, log_std, std):
+    var = std.pow(2)
     log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * torch.log(2 * Variable(PI)) - log_std
     return log_density.sum(1)
+'''
 
 def update_params_actor_critic(batch):
     rewards = torch.Tensor(batch.reward)
@@ -187,6 +197,8 @@ def update_params_actor_critic(batch):
     total_loss = policy_surr + vf_loss
     total_loss.backward()
     torch.nn.utils.clip_grad_norm(ac_net.parameters(), 40)
+
+    
     opt_ac.step()
 
 
