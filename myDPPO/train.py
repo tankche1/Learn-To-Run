@@ -145,7 +145,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
 
     env = RunEnv(visualize=False)
 
-    running_state = ZFilter((num_inputs,), clip=5)
+    #running_state = ZFilter((num_inputs,), clip=5)
     #running_reward = ZFilter((1,), demean=False, clip=10)
     episode_lengths = []
 
@@ -178,12 +178,12 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             state = env.reset(difficulty = 0)
             state = numpy.array(state)
 
-            state = running_state(state)
+            #state = running_state(state)
 
-            #state = Variable(torch.Tensor(state).unsqueeze(0))
-            #shared_obs_stats.observes(state)
-            #state = shared_obs_stats.normalize(state)
-            #state = state.data[0].numpy()
+            state = Variable(torch.Tensor(state).unsqueeze(0))
+            shared_obs_stats.observes(state)
+            state = shared_obs_stats.normalize(state)
+            state = state.data[0].numpy()
 
             #print(state)
 
@@ -204,11 +204,14 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     action = select_action_actor_critic(state,ac_net)
                 #print(action)
                 action = action.data[0].numpy()
-                if numpy.any(numpy.isnan(action)):
+                while numpy.any(numpy.isnan(action)):
                     print(state)
                     print(action)
                     print('ERROR')
-                    raise RuntimeError('action NaN problem')
+                    action = select_action_actor_critic(state,ac_net)
+                    action = action.data[0].numpy()
+                    state = state + numpy.random.rand(41)*0.001
+                    #raise RuntimeError('action NaN problem')
                 #print(action)
                 #print("------------------------")
                 #timer = time.time()
@@ -224,12 +227,12 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
 
                 #last_state ,next_state = update_observation(last_state,next_state)
 
-                next_state = running_state(next_state)
+                #next_state = running_state(next_state)
 
-                #next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
-                #shared_obs_stats.observes(next_state)
-                #next_state = shared_obs_stats.normalize(next_state)
-                #next_state = next_state.data[0].numpy()
+                next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
+                shared_obs_stats.observes(next_state)
+                next_state = shared_obs_stats.normalize(next_state)
+                next_state = next_state.data[0].numpy()
 
                 #print(next_state[41:82])
 
@@ -269,6 +272,23 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             print('TrainEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
                 i_episode, reward_sum, reward_batch))
 
+            epoch = i_episode
+            if reward_batch > best_result:
+                best_result = reward_batch
+                save_model({
+                        'epoch': epoch ,
+                        'bh': args.bh,
+                        'state_dict': shared_model.state_dict(),
+                        'optimizer' : opt_ac.state_dict(),
+                    },PATH_TO_MODEL,'best')
+
+            if epoch%30==1:
+                save_model({
+                        'epoch': epoch ,
+                        'bh': args.bh,
+                        'state_dict': shared_model.state_dict(),
+                        'optimizer' : opt_ac.state_dict(),
+                    },PATH_TO_MODEL,epoch)
         # wait for a new signal to continue
         while traffic_light.get() == signal_init:
             pass
@@ -423,6 +443,7 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
                     'bh': args.bh,
                     'state_dict': shared_model.state_dict(),
                     'optimizer' : opt_ac.state_dict(),
+                    'obs' : shared_obs_stats
                 },PATH_TO_MODEL,'best')
 
         if epoch%30==1:
@@ -431,5 +452,6 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
                     'bh': args.bh,
                     'state_dict': shared_model.state_dict(),
                     'optimizer' : opt_ac.state_dict(),
+                    'obs' :shared_obs_stats
                 },PATH_TO_MODEL,epoch)
 
