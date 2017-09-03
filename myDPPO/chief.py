@@ -24,8 +24,8 @@ def chief(args, rank, traffic_light, counter, shared_model, shared_grad_buffers,
             optimizer.step()
             counter.reset()
             shared_grad_buffers.reset()
-            if epoch%30 == 0:
-                adjust_learning_rate(args,noptimizer,epoch)
+            #if epoch%30 == 0:
+            #adjust_learning_rate(args,optimizer,epoch)
             #running_state = ZFilter((args.feature,), clip=5)
             traffic_light.switch() # workers start new loss computation
             #print('update')

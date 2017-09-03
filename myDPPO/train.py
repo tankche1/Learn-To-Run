@@ -273,11 +273,15 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                 #print(action)
                 #print("------------------------")
                 #timer = time.time()
+                reward = 0
                 if args.skip:
                     #env.step(action)
-                    _,reward,_,_ = env.step(action)
-                    reward_sum += reward
-                next_state, reward, done, _ = env.step(action)
+                    _,A,_,_ = env.step(action)
+                    reward += A
+                    _,A,_,_ = env.step(action)
+                    reward += A
+                next_state, A, done, _ = env.step(action)
+                reward += A
                 #print(next_state)
                 #last_state = process_observation(state)
                 next_state = process_observation(next_state)

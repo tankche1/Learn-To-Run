@@ -328,4 +328,5 @@ for i_episode in count(1):
                 'bh': args.bh,
                 'state_dict': ac_net.state_dict(),
                 'optimizer' : opt_ac.state_dict(),
+                'obs' : running_state,
             },PATH_TO_MODEL,epoch)
