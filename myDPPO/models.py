@@ -58,7 +58,7 @@ class Shared_grad_buffers():
     def __init__(self, model):
         self.grads = {}
         for name, p in model.named_parameters():
-            self.grads[name+'_grad'] = torch.ones(p.size()).share_memory_()
+            self.grads[name+'_grad'] = torch.zeros(p.size()).share_memory_()
 
     def add_gradient(self, model):
         for name, p in model.named_parameters():

@@ -135,12 +135,60 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     #ensure_shared_grads(ac_net, shared_model)
     #opt_ac.step()
 
+def process_observation(observation):
+    o = list(observation) # an array
+
+    pr = o[0]
+    o[0]/=4
+
+    px = o[1]
+    py = o[2]
+
+    pvr = o[3]
+    o[3] /=4
+    pvx = o[4]
+    pvy = o[5]
+
+    for i in range(6,18):
+        o[i]/=4
+
+    o = o + [o[22+i*2+1]-0.5 for i in range(7)] # a copy of original y, not relative y.
+
+    # x and y relative to pelvis
+    for i in range(7): # head pelvis torso, toes and taluses
+        o[22+i*2+0] -= px
+        o[22+i*2+1] -= py
+
+    o[18] -= px # mass pos xy made relative
+    o[19] -= py
+    o[20] -= pvx
+    o[21] -= pvy
+
+    o[38]= min(4,o[38])/3 # ball info are included later in the stage
+    # o[39]/=5
+    # o[40]/=5
+
+    o[1]=0 # abs value of pel x is not relevant
+    o[2]-= 0.5
+
+    o[4]/=2
+    o[5]/=2
+
+    return o
+
+def transform_observation(last_state,observation):
+    last_state = [(observation[i] - last_state[i])/0.01 for i in range(0,48)]
+    #print(len(observation))
+    #print(len(last_state))
+    return observation,observation + last_state
+
 def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats ,opt_ac):
     best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
+    last_state = [1]*48
     #last_state = numpy.zeros(48)
 
     env = RunEnv(visualize=False)
@@ -176,6 +224,12 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             #state = env.reset()
             #print(num_steps)
             state = env.reset(difficulty = 0)
+            #state = numpy.array(state)
+
+            last_state = process_observation(state)
+            state = process_observation(state)
+            last_state ,state = transform_observation(last_state,state)
+
             state = numpy.array(state)
 
             #state = running_state(state)
@@ -186,6 +240,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             state = state.data[0].numpy()
 
             #print(state)
+            #return
 
             #print(AA)
 
@@ -204,14 +259,17 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     action = select_action_actor_critic(state,ac_net)
                 #print(action)
                 action = action.data[0].numpy()
-                while numpy.any(numpy.isnan(action)):
+                if numpy.any(numpy.isnan(action)):
                     print(state)
                     print(action)
+                    print(ac_net.affine1.weight)
+                    print(ac_net.affine1.weight.data)
                     print('ERROR')
-                    action = select_action_actor_critic(state,ac_net)
-                    action = action.data[0].numpy()
-                    state = state + numpy.random.rand(41)*0.001
-                    #raise RuntimeError('action NaN problem')
+                    #action = select_action_actor_critic(state,ac_net)
+                    #action = action.data[0].numpy()
+                    #state = state + numpy.random.rand(args.feature)*0.001
+
+                    raise RuntimeError('action NaN problem')
                 #print(action)
                 #print("------------------------")
                 #timer = time.time()
@@ -220,7 +278,15 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     _,reward,_,_ = env.step(action)
                     reward_sum += reward
                 next_state, reward, done, _ = env.step(action)
+                #print(next_state)
+                #last_state = process_observation(state)
+                next_state = process_observation(next_state)
+                last_state ,next_state = transform_observation(last_state,next_state)
+
                 next_state = numpy.array(next_state)
+                #print(next_state)
+                #print(next_state.shape)
+                #return
                 reward_sum += reward
                 #print('env:')
                 #print(time.time()-timer)
@@ -280,6 +346,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                         'bh': args.bh,
                         'state_dict': shared_model.state_dict(),
                         'optimizer' : opt_ac.state_dict(),
+                        'obs' : shared_obs_stats,
                     },PATH_TO_MODEL,'best')
 
             if epoch%30==1:
@@ -288,6 +355,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                         'bh': args.bh,
                         'state_dict': shared_model.state_dict(),
                         'optimizer' : opt_ac.state_dict(),
+                        'obs' :shared_obs_stats,
                     },PATH_TO_MODEL,epoch)
         # wait for a new signal to continue
         while traffic_light.get() == signal_init:
@@ -443,7 +511,7 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
                     'bh': args.bh,
                     'state_dict': shared_model.state_dict(),
                     'optimizer' : opt_ac.state_dict(),
-                    'obs' : shared_obs_stats
+                    #'obs' : shared_obs_stats
                 },PATH_TO_MODEL,'best')
 
         if epoch%30==1:
@@ -452,6 +520,6 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
                     'bh': args.bh,
                     'state_dict': shared_model.state_dict(),
                     'optimizer' : opt_ac.state_dict(),
-                    'obs' :shared_obs_stats
+                    #'obs' :shared_obs_stats
                 },PATH_TO_MODEL,epoch)
 
