@@ -22,7 +22,7 @@ import torch.multiprocessing as mp
 
 from models import Policy, Value, ActorCritic
 from replay_memory import Memory
-from running_state import ZFilter
+from running_state import ZFilter,Shared_obs_stats
 from train import train,test
 
 from osim.env import RunEnv
@@ -73,7 +73,7 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=41, 
+parser.add_argument('--feature', type=int, default=96, 
                     help='features num')
 
 
@@ -83,10 +83,10 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     num_inputs = args.feature
-    num_actions = 18
+    num_actions = 9
 
     ac_net = ActorCritic(num_inputs, num_actions)
-    #opt_ac = my_optim.SharedAdam(ac_net.parameters(), lr=args.lr)
+    opt_ac = my_optim.SharedAdam(ac_net.parameters(), lr=args.lr)
 
     if args.resume:
         print("=> loading checkpoint ")
@@ -100,11 +100,11 @@ if __name__ == '__main__':
                 .format(checkpoint['epoch']))
 
     ac_net.share_memory()
-    opt_ac = optim.Adam(ac_net.parameters(), lr=args.lr)
+    #opt_ac = my_optim.SharedAdam(ac_net.parameters(), lr=args.lr)
     opt_ac.share_memory()
-    shared_grad_buffers = Shared_grad_buffers(shared_model)
+    #shared_grad_buffers = Shared_grad_buffers(shared_model)
     
-
+    shared_obs_stats = Shared_obs_stats(num_inputs)
     processes = []
 
     if args.test:
@@ -117,7 +117,7 @@ if __name__ == '__main__':
         if rank==0:
             can_save = True
 
-        p = mp.Process(target=train, args=(rank, args, ac_net, opt_ac, can_save))
+        p = mp.Process(target=train, args=(rank, args, ac_net, opt_ac, can_save,shared_obs_stats))
         p.start()
         processes.append(p)
     for p in processes:

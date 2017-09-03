@@ -49,17 +49,56 @@ def update_observation(last_state,state):
     #last_state = state
     return state,final
 '''
-# 41 dim to 48 dim
-def update_observation(last_state,observation):
+'''
+above was copied from 'osim-rl/osim/env/run.py'.
+
+observation:
+0 pelvis r
+1 x
+2 y
+
+3 pelvis vr
+4 vx
+5 vy
+
+6-11 hip_r .. ankle_l [joint angles]
+
+12-17 hip_r .. ankle_l [joint velocity]
+
+18-19 mass_pos xy
+20-21 mass_vel xy
+
+22-(22+7x2-1=35) bodypart_positions(x,y)
+
+36-37 muscles psoas
+
+38-40 obstacles
+38 x dist
+39 y height
+40 radius
+
+radius of heel and toe ball: 0.05
+
+'''
+
+def process_observation(observation):
     o = list(observation) # an array
+
+    pr = o[0]
+    o[0]/=4
 
     px = o[1]
     py = o[2]
 
+    pvr = o[3]
+    o[3] /=4
     pvx = o[4]
     pvy = o[5]
 
-    o = o + [o[22+i*2+1] for i in range(7)] # a copy of original y, not relative y.
+    for i in range(6,18):
+        o[i]/=4
+
+    o = o + [o[22+i*2+1]-0.5 for i in range(7)] # a copy of original y, not relative y.
 
     # x and y relative to pelvis
     for i in range(7): # head pelvis torso, toes and taluses
@@ -71,19 +110,23 @@ def update_observation(last_state,observation):
     o[20] -= pvx
     o[21] -= pvy
 
-    o[38]= min(4,o[38]) # ball info are included later in the stage
+    o[38]= min(4,o[38])/3 # ball info are included later in the stage
     # o[39]/=5
     # o[40]/=5
 
     o[1]=0 # abs value of pel x is not relevant
+    o[2]-= 0.5
 
-    state = numpy.array(o)
-    final = numpy.array([0.1]*96)
-    final[0:48] = state[0:48]
-    #print(state,last_state)
-    final[48:96] = (state - last_state)/0.01
-    #last_state = state
-    return state,final
+    o[4]/=2
+    o[5]/=2
+
+    return o
+
+def transform_observation(last_state,observation):
+    last_state = [(observation[i] - last_state[i])/0.01 for i in range(0,48)]
+    #print(len(observation))
+    #print(len(last_state))
+    return observation,observation + last_state
 
 def select_action(state):
     state = torch.from_numpy(state).unsqueeze(0)
@@ -182,21 +225,21 @@ def update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac):
     ensure_shared_grads(ac_net, shared_model)
     opt_ac.step()
 
-def train(rank,args,shared_model,opt_ac,can_save):
+def train(rank,args,shared_model,opt_ac,can_save,shared_obs_stats):
     best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
-    num_actions = 18
-    last_state = numpy.zeros(48)
+    num_actions = 9
+    last_state = [1]*48
 
     if args.render and can_save:
         env = RunEnv(visualize=True)
     else:
         env = RunEnv(visualize=False)
 
-    running_state = ZFilter((num_inputs,), clip=5)
-    running_reward = ZFilter((1,), demean=False, clip=10)
+    #running_state = ZFilter((num_inputs,), clip=5)
+    #running_reward = ZFilter((1,), demean=False, clip=10)
     episode_lengths = []
 
     PATH_TO_MODEL = '../models/'+str(args.bh)
@@ -219,13 +262,21 @@ def train(rank,args,shared_model,opt_ac,can_save):
             #state = env.reset()
             #print(num_steps)
             state = env.reset(difficulty = 0)
+            last_state = process_observation(state)
+            state = process_observation(state)
+            last_state ,state = transform_observation(last_state,state)
+
             state = numpy.array(state)
             #global last_state
             #last_state,_ = update_observation(last_state,state)
             #last_state,state = update_observation(last_state,state)
             #print(state.shape[0])
             #print(state[41])
-            state = running_state(state)
+            state = Variable(torch.Tensor(state).unsqueeze(0))
+            shared_obs_stats.observes(state)
+            state = shared_obs_stats.normalize(state)
+            state = state.data[0].numpy()
+            #state = running_state(state)
 
             reward_sum = 0
             #timer = time.time()
@@ -245,18 +296,35 @@ def train(rank,args,shared_model,opt_ac,can_save):
                 #print(action)
                 #print("------------------------")
                 #timer = time.time()
+
+                BB = numpy.append(action,action)
+                #print(BB)
+
+                reward = 0
                 if args.skip:
                     #env.step(action)
-                    _,reward,_,_ = env.step(action)
-                    reward_sum += reward
-                next_state, reward, done, _ = env.step(action)
+                    _,A,_,_ = env.step(BB)
+                    reward += A
+                    _,A,_,_ = env.step(BB)
+                    reward += A
+
+
+                next_state, A, done, _ = env.step(BB)
+                reward += A
+                next_state = process_observation(next_state)
+                last_state ,next_state = transform_observation(last_state,next_state)
+
                 next_state = numpy.array(next_state)
                 reward_sum += reward
                 #print('env:')
                 #print(time.time()-timer)
 
                 #last_state ,next_state = update_observation(last_state,next_state)
-                next_state = running_state(next_state)
+                #next_state = running_state(next_state)
+                next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
+                shared_obs_stats.observes(next_state)
+                next_state = shared_obs_stats.normalize(next_state)
+                next_state = next_state.data[0].numpy()
                 #print(next_state[41:82])
 
                 mask = 1
@@ -299,7 +367,8 @@ def train(rank,args,shared_model,opt_ac,can_save):
                         'epoch': epoch ,
                         'bh': args.bh,
                         'state_dict': ac_net.state_dict(),
-                        'optimizer' : opt_ac.state_dict(),
+                        'optimizer' : opt_ac,
+                        'obs' : shared_obs_stats,
                     },PATH_TO_MODEL,'best')
 
             if epoch%30==1:
@@ -307,7 +376,8 @@ def train(rank,args,shared_model,opt_ac,can_save):
                         'epoch': epoch ,
                         'bh': args.bh,
                         'state_dict': ac_net.state_dict(),
-                        'optimizer' : opt_ac.state_dict(),
+                        'optimizer' : opt_ac,
+                        'obs' :shared_obs_stats,
                     },PATH_TO_MODEL,epoch)
         
         
@@ -316,7 +386,7 @@ def test(rank,args,shared_model,opt_ac):
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
-    num_actions = 18
+    num_actions = 9
     last_state = numpy.zeros(41)
 
     if args.render:

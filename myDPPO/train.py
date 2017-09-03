@@ -373,6 +373,7 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
+    last_state = [1]*48
     #last_state = numpy.zeros(41)
 
     if args.render:
@@ -380,7 +381,7 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
     else:
         env = RunEnv(visualize=False)
 
-    running_state = ZFilter((num_inputs,), clip=5)
+    #running_state = ZFilter((num_inputs,), clip=5)
     #running_reward = ZFilter((1,), demean=False, clip=10)
     episode_lengths = []
 
@@ -404,18 +405,25 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
             #state = env.reset()
             #print(num_steps)
             state = env.reset(difficulty = 0)
+
+            last_state = process_observation(state)
+            state = process_observation(state)
+            last_state ,state = transform_observation(last_state,state)
+
             state = numpy.array(state)
+
+            #state = numpy.array(state)
             #global last_state
             #last_state = state
             #last_state,_ = update_observation(last_state,state)
             #last_state,state = update_observation(last_state,state)
             #print(state.shape[0])
             #print(state[41])
-            state = running_state(state)
-            #state = Variable(torch.Tensor(state).unsqueeze(0))
-            #shared_obs_stats.observes(state)
-            #state = shared_obs_stats.normalize(state)
-            #state = state.data[0].numpy()
+            #state = running_state(state)
+            state = Variable(torch.Tensor(state).unsqueeze(0))
+            shared_obs_stats.observes(state)
+            state = shared_obs_stats.normalize(state)
+            state = state.data[0].numpy()
 
             reward_sum = 0
             for t in range(10000): # Don't infinite loop while learning
@@ -438,25 +446,34 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
                 #print("------------------------")
 
                 #timer = time.time()
+                reward = 0
                 if args.skip:
                     #env.step(action)
-                    _,reward,_,_ = env.step(action)
-                    reward_sum += reward
-                next_state, reward, done, _ = env.step(action)
-                next_state = numpy.array(next_state)
+                    _,A,_,_ = env.step(action)
+                    reward += A
+                    _,A,_,_ = env.step(action)
+                    reward += A
+                
+                next_state, A, done, _ = env.step(action)
+                reward += A
+                #next_state = numpy.array(next_state)
                 reward_sum += reward
 
+                next_state = process_observation(next_state)
+                last_state ,next_state = transform_observation(last_state,next_state)
+
+                next_state = numpy.array(next_state)
                 #print('env take:')
                 #print(time.time()-timer)
 
                 #timer = time.time()
 
                 #last_state ,next_state = update_observation(last_state,next_state)
-                next_state = running_state(next_state)
-                #next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
-                #shared_obs_stats.observes(next_state)
-                #next_state = shared_obs_stats.normalize(next_state)
-                #next_state = next_state.data[0].numpy()
+                #next_state = running_state(next_state)
+                next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
+                shared_obs_stats.observes(next_state)
+                next_state = shared_obs_stats.normalize(next_state)
+                next_state = next_state.data[0].numpy()
                 #print(next_state[41:82])
 
                 mask = 1
