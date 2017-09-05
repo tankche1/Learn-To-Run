@@ -76,7 +76,7 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=96, 
+parser.add_argument('--feature', type=int, default=66, 
                     help='features num')
 
 

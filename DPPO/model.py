@@ -64,6 +64,8 @@ class Shared_obs_stats():
     def observes(self, obs):
         # observation mean var updates
         x = obs.data.squeeze()
+        #print(x.size())
+        #print(self.mean.size())
         self.n += 1.
         last_mean = self.mean.clone()
         self.mean += (x-self.mean)/self.n

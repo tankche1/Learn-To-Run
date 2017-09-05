@@ -45,6 +45,47 @@ def normal(x, mu, std):
     b = 1/(2*std*np.pi).sqrt()
     return a*b
 
+# 41 to 41+11+14=66
+def process_observation(last_state,observation):
+
+    o = list(observation) # an array
+    l = list(last_state)
+
+    px = o[1]
+    py = o[2]
+    pvx = o[4]
+    pvy = o[5]
+
+    o[18] -= px
+    o[19] -= py
+
+    o[20] -= pvx
+    o[21] -= pvy
+
+    for i in range(7):
+        o[22+2*i] -= px
+        o[22+2*i+1] -= py
+
+    av = [0]*11
+    v = [0]*14
+    if len(l)>0:
+        for i in range(3):
+            av[i] = (o[3+i] - l[3+i])*100
+        for i in range(6):
+            av[3+i] = (o[12+i] - l[12+i])*100
+        av[9] = (o[20] - l[20])*100
+        av[10] = (o[21] - l[21])*100
+
+        for i in range(14):
+            v[i] = o[22+i] - l[22+i]
+
+    #av = av*100
+
+    #print(len(o),len(v),len(av))
+
+    return o,o + v + av
+
+
 def train(rank, params, traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats, test_n):
     torch.manual_seed(params.seed)
     #env = gym.make(params.env_name)
@@ -54,11 +95,15 @@ def train(rank, params, traffic_light, counter, shared_model, shared_grad_buffer
     num_inputs = params.num_inputs
     num_outputs = params.num_outputs
     model = Model(num_inputs, num_outputs)
+    last_state = []
 
     memory = ReplayMemory(params.exploration_size)
 
     #state = env.reset()
     state = env.reset(difficulty=0)
+
+    last_state ,state = process_observation(last_state,state)
+
     state = numpy.array(state)
     state = Variable(torch.Tensor(state).unsqueeze(0))
     done = True 
@@ -99,6 +144,8 @@ def train(rank, params, traffic_light, counter, shared_model, shared_grad_buffer
                 env_action = action.data.squeeze().numpy()
 
                 state, reward, done, _ = env.step(env_action)
+
+                last_state ,state = process_observation(last_state,state)
                 state = numpy.array(state)
                 
                 done = (done or episode_length >= params.max_episode_length)
@@ -111,6 +158,8 @@ def train(rank, params, traffic_light, counter, shared_model, shared_grad_buffer
                     cum_reward = 0
                     episode_length = 0
                     state = env.reset(difficulty=0)
+                    last_state = []
+                    last_state ,state = process_observation(last_state,state)
                     state = numpy.array(state)
                 state = Variable(torch.Tensor(state).unsqueeze(0))
                 if done:

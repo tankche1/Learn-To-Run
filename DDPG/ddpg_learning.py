@@ -59,6 +59,11 @@ def transform_observation(last_state,observation):
     #print(len(last_state))
     return observation,observation + last_state
 
+def action_map(action):
+                act_k = (1.0 - 0.0)/ 2.
+                act_b = (1.0 + 0.0)/ 2.
+                return act_k * action + act_b
+
 def ddpg_learning(
     env,
     random_process,
@@ -113,8 +118,11 @@ def ddpg_learning(
             # Add noise for exploration
             noise = random_process.sample()[0]
             action += noise
+
             #print(noise)
-            action = np.clip(action, 0.0, 1.0)
+            action = np.clip(action, -1.0, 1.0)
+            action = action_map(action)
+
 
             #print(action.shape)
             #print(state.shape)

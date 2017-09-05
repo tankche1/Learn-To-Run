@@ -13,7 +13,7 @@ def chief(rank, params, traffic_light, counter, shared_model, shared_grad_buffer
         if counter.get() > params.update_treshold:
             #print(shared_grad_buffers.grads['mu.weight_grad'])
             for n,p in shared_model.named_parameters():
-                p._grad = Variable(shared_grad_buffers.grads[n+'_grad']) / params.num_processes
+                p._grad = Variable(shared_grad_buffers.grads[n+'_grad']) 
             optimizer.step()
             counter.reset()
             shared_grad_buffers.reset()

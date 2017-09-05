@@ -135,52 +135,44 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     #ensure_shared_grads(ac_net, shared_model)
     #opt_ac.step()
 
-def process_observation(observation):
+# 41 to 41+11+14=66
+def process_observation(last_state,observation):
     o = list(observation) # an array
-
-    pr = o[0]
-    o[0]/=4
+    l = list(last_state)
 
     px = o[1]
     py = o[2]
-
-    pvr = o[3]
-    o[3] /=4
     pvx = o[4]
     pvy = o[5]
 
-    for i in range(6,18):
-        o[i]/=4
-
-    o = o + [o[22+i*2+1]-0.5 for i in range(7)] # a copy of original y, not relative y.
-
-    # x and y relative to pelvis
-    for i in range(7): # head pelvis torso, toes and taluses
-        o[22+i*2+0] -= px
-        o[22+i*2+1] -= py
-
-    o[18] -= px # mass pos xy made relative
+    o[18] -= px
     o[19] -= py
+
     o[20] -= pvx
     o[21] -= pvy
 
-    o[38]= min(4,o[38])/3 # ball info are included later in the stage
-    # o[39]/=5
-    # o[40]/=5
+    for i in range(7):
+        o[22+2*i] -= px
+        o[22+2*i+1] -= py
 
-    o[1]=0 # abs value of pel x is not relevant
-    o[2]-= 0.5
+    av = [0]*11
+    for i in range(3):
+        av[i] = (o[3+i] - l[3+i])*100
+    for i in range(6):
+        av[3+i] = (o[12+i] - l[12+i])*100
+    av[9] = (o[20] - l[20])*100
+    av[10] = (o[21] - l[21])*100
 
-    o[4]/=2
-    o[5]/=2
+    #av = av*100
 
-    return o
+    v = [0]*14
+    for i in range(14):
+        v[i] = o[22+i] - l[22+i]
 
-def transform_observation(last_state,observation):
-    last_state = [(observation[i] - last_state[i])/0.01 for i in range(0,48)]
-    #print(len(observation))
-    #print(len(last_state))
-    return observation,observation + last_state
+    #print(len(o),len(v),len(av))
+
+
+    return o,o + v + av
 
 def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats ,opt_ac):
     best_result =-1000 
@@ -188,7 +180,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
-    last_state = [1]*48
+    last_state = [0]*41
     #last_state = numpy.zeros(48)
 
     env = RunEnv(visualize=False)
@@ -226,9 +218,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             state = env.reset(difficulty = 0)
             #state = numpy.array(state)
 
-            last_state = process_observation(state)
-            state = process_observation(state)
-            last_state ,state = transform_observation(last_state,state)
+            last_state , state=process_observation(last_state,state)
 
             state = numpy.array(state)
 
@@ -284,8 +274,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                 reward += A
                 #print(next_state)
                 #last_state = process_observation(state)
-                next_state = process_observation(next_state)
-                last_state ,next_state = transform_observation(last_state,next_state)
+                last_state , next_state=process_observation(last_state,next_state)
 
                 next_state = numpy.array(next_state)
                 #print(next_state)
@@ -339,8 +328,11 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         epoch = i_episode
         if (i_episode % args.log_interval == 0) and (rank == 0):
 
-            print('TrainEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
-                i_episode, reward_sum, reward_batch))
+            print('TrainEpisode {}\tTime{}\tLast reward: {}\tAverage reward {:.2f}'.format(
+                i_episode,
+                time.strftime("%Hh %Mm %Ss",
+                              time.gmtime(time.time() - start_time)),
+                reward_sum, reward_batch))
 
             epoch = i_episode
             if reward_batch > best_result:

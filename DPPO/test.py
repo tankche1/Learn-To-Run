@@ -28,12 +28,55 @@ def save_model(model,PATH_TO_MODEL,epoch):
     torch.save(model,PATH_TO_MODEL+'/'+str(epoch)+'.t7')
     print('done.')
 
+
+# 41 to 41+11+14=66
+def process_observation(last_state,observation):
+
+    o = list(observation) # an array
+    l = list(last_state)
+
+    px = o[1]
+    py = o[2]
+    pvx = o[4]
+    pvy = o[5]
+
+    o[18] -= px
+    o[19] -= py
+
+    o[20] -= pvx
+    o[21] -= pvy
+
+    for i in range(7):
+        o[22+2*i] -= px
+        o[22+2*i+1] -= py
+
+    av = [0]*11
+    v = [0]*14
+    if len(l)>0:
+        for i in range(3):
+            av[i] = (o[3+i] - l[3+i])*100
+        for i in range(6):
+            av[3+i] = (o[12+i] - l[12+i])*100
+        av[9] = (o[20] - l[20])*100
+        av[10] = (o[21] - l[21])*100
+
+        for i in range(14):
+            v[i] = o[22+i] - l[22+i]
+
+    #av = av*100
+
+    #print(len(o),len(v),len(av))
+
+    return o,o + v + av
+
+
 def test(rank, params, shared_model, shared_obs_stats, test_n):
     PATH_TO_MODEL = '../models/'+params.bh
     torch.manual_seed(params.seed + rank)
     best_result = -1000
     work_dir = mkdir('exp', 'ppo')
     monitor_dir = mkdir(work_dir, 'monitor')
+    last_state = []
     #env = gym.make(params.env_name)
     if params.render:
         env = RunEnv(visualize=True)
@@ -48,7 +91,10 @@ def test(rank, params, shared_model, shared_obs_stats, test_n):
 
     #state = env.reset()
     state = env.reset(difficulty=0)
+
+    last_state ,state = process_observation(last_state,state)
     state = numpy.array(state)
+
     state = Variable(torch.Tensor(state).unsqueeze(0))
     reward_sum = 0
     done = True
@@ -69,7 +115,10 @@ def test(rank, params, shared_model, shared_obs_stats, test_n):
         action = mu + sigma_sq.sqrt()*Variable(eps)
         env_action = action.data.squeeze().numpy()
         state, reward, done, _ = env.step(env_action)
+
+        last_state ,state = process_observation(last_state,state)
         state = numpy.array(state)
+
         reward_sum += reward
 
         if done:
@@ -99,6 +148,9 @@ def test(rank, params, shared_model, shared_obs_stats, test_n):
             reward_sum = 0
             episode_length = 0
             state = env.reset(difficulty=0)
+
+            last_state = []
+            last_state ,state = process_observation(last_state,state)
             state = numpy.array(state)
             time.sleep(10)
 

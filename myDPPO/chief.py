@@ -20,7 +20,7 @@ def chief(args, rank, traffic_light, counter, shared_model, shared_grad_buffers,
         if counter.get() > args.num_processes-1:
             #print(shared_grad_buffers.grads['mu.weight_grad'])
             for n,p in shared_model.named_parameters():
-                p._grad = Variable(shared_grad_buffers.grads[n+'_grad']) / args.num_processes
+                p._grad = Variable(shared_grad_buffers.grads[n+'_grad']) 
             optimizer.step()
             counter.reset()
             shared_grad_buffers.reset()

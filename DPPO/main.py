@@ -39,7 +39,7 @@ class Params():
         self.seed = 1
         self.env_name = 'InvertedPendulum-v1'
         self.render = args.render
-        self.num_inputs = 41
+        self.num_inputs = 66
         self.num_outputs = 18
         self.bh = args.bh
         self.resume = args.resume
@@ -88,8 +88,6 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=96, 
-                    help='features num')
 
 if __name__ == '__main__':
     args = parser.parse_args()

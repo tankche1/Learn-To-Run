@@ -1,7 +1,7 @@
 # Copied from https://github.com/ghliu/pytorch-ddpg/blob/master/random_process.py
 
 import gym
-
+from osim.env import RunEnv
 # https://github.com/openai/gym/blob/master/gym/core.py
 class NormalizedEnv(gym.ActionWrapper):
     """ Wrap action """
