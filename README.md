@@ -10,8 +10,6 @@
 
 # Brief Introduction
 
-Please select the right branch.
-
 PPO3 is the original PPO working on original observation.(Reach 12points in 4 days)
 
 PPO is the asychronous PPO (like A3C).Didn't fine-tuned well.
