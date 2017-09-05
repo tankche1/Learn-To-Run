@@ -91,7 +91,7 @@ else:
 
 #num_inputs = env.observation_space.shape[0]
 #num_actions = env.action_space.shape[0]
-num_inputs = 41
+num_inputs = 66
 num_actions = 18
 
 #env.seed(args.seed)
@@ -139,6 +139,77 @@ def normal_log_density(x, mean, log_std, std):
     log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * torch.log(2 * Variable(PI)) - log_std
     return log_density.sum(1)
 '''
+
+'''
+above was copied from 'osim-rl/osim/env/run.py'.
+
+observation:
+0 pelvis r
+1 x
+2 y
+
+3 pelvis vr
+4 vx
+5 vy
+
+6-11 hip_r .. ankle_l [joint angles]
+
+12-17 hip_r .. ankle_l [joint velocity]
+
+18-19 mass_pos xy
+20-21 mass_vel xy
+
+22-(22+7x2-1=35) bodypart_positions(x,y)
+
+36-37 muscles psoas
+
+38-40 obstacles
+38 x dist
+39 y height
+40 radius
+
+radius of heel and toe ball: 0.05
+
+'''
+
+# 41 to 41+11+14=66
+def process_observation(last_state,observation):
+    o = list(observation) # an array
+    l = list(last_state)
+
+    px = o[1]
+    py = o[2]
+    pvx = o[4]
+    pvy = o[5]
+
+    o[18] -= px
+    o[19] -= py
+
+    o[20] -= pvx
+    o[21] -= pvy
+
+    for i in range(7):
+        o[22+2*i] -= px
+        o[22+2*i+1] -= py
+
+    av = [0]*11
+    for i in range(3):
+        av[i] = (o[3+i] - l[3+i])*100
+    for i in range(6):
+        av[3+i] = (o[12+i] - l[12+i])*100
+    av[9] = (o[20] - l[20])*100
+    av[10] = (o[21] - l[21])*100
+
+    #av = av*100
+
+    v = [0]*14
+    for i in range(14):
+        v[i] = o[22+i] - l[22+i]
+
+    #print(len(o),len(v),len(av))
+
+
+    return o,o + v + av
 
 def update_params_actor_critic(batch):
     rewards = torch.Tensor(batch.reward)
@@ -263,6 +334,7 @@ def update_params(batch):
 running_state = ZFilter((num_inputs,), clip=5)
 running_reward = ZFilter((1,), demean=False, clip=10)
 episode_lengths = []
+last_state = 41*[0]
 
 for i_episode in count(1):
     memory = Memory()
@@ -274,6 +346,10 @@ for i_episode in count(1):
         #state = env.reset()
         #print(num_steps)
         state = env.reset(difficulty = 0)
+
+        last_state , state=process_observation(last_state,state)
+        #print(len(state))
+
         state = numpy.array(state)
         state = running_state(state)
 
@@ -289,6 +365,9 @@ for i_episode in count(1):
             #print(action)
             #print("------------------------")
             next_state, reward, done, _ = env.step(action)
+
+            last_state , next_state=process_observation(last_state,next_state)
+
             next_state = numpy.array(next_state)
             reward_sum += reward
 

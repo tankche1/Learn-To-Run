@@ -1,3 +1,4 @@
+'''
 from osim.env import RunEnv
 import scipy
 
@@ -16,3 +17,8 @@ for i in range(200):
     print(type(env.action_space.sample()))
     print(env.action_space.sample())
     print('-----------------------')
+'''
+o = [1]*3
+o[0]=2
+o[1]=3
+print(o/0.5)
