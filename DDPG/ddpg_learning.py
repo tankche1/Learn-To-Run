@@ -113,6 +113,7 @@ def ddpg_learning(
             # Add noise for exploration
             noise = random_process.sample()[0]
             action += noise
+            #print(noise)
             action = np.clip(action, 0.0, 1.0)
 
             #print(action.shape)
