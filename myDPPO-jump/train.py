@@ -136,9 +136,43 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     #opt_ac.step()
 
 # 41 to 41+11+14=66
-def process_observation(last_state,observation):
+'''
+above was copied from 'osim-rl/osim/env/run.py'.
+
+observation:
+0 pelvis r
+1 x
+2 y
+
+3 pelvis vr
+4 vx
+5 vy
+
+6-11 hip_r .. ankle_l [joint angles]
+
+12-17 hip_r .. ankle_l [joint velocity]
+
+18-19 mass_pos xy
+20-21 mass_vel xy
+
+22-(22+7x2-1=35) bodypart_positions(x,y)
+
+36-37 muscles psoas
+
+38-40 obstacles
+38 x dist
+39 y height
+40 radius
+
+radius of heel and toe ball: 0.05
+
+'''
+
+## 59
+def process_observation(last_state,last_v,observation):
     o = list(observation) # an array
     l = list(last_state)
+    last_v = list(last_v)
 
     px = o[1]
     py = o[2]
@@ -155,32 +189,57 @@ def process_observation(last_state,observation):
         o[22+2*i] -= px
         o[22+2*i+1] -= py
 
-    av = [0]*11
-    for i in range(3):
-        av[i] = (o[3+i] - l[3+i])*100
+    bodies = ['head', 'pelvis', 'torso', 'toes_l', 'toes_r', 'talus_l', 'talus_r']
+    pelvis_pos = [o[0],o[1],o[2]]
+    pelvis_vel = [o[3],o[4],o[5]]
+
+    jnts = ['hip_r','knee_r','ankle_r','hip_l','knee_l','ankle_l']
+    joint_angles = [o[6],o[7],o[8]]
+    joint_vel = [o[12],o[13],o[14]]
+
+    mass_pos = [o[18],o[19]]
+    mass_vel = [o[20],o[21]]
+
+    bodypart_pos = [o[22],o[23],o[24],o[25],o[26],o[27],o[30],o[31],o[34],o[35]]
+    muscles = [o[36],o[37]]
+    obstacle = [o[38],o[39],o[40]]
+
+    v = [0]*10
+
     for i in range(6):
-        av[3+i] = (o[12+i] - l[12+i])*100
-    av[9] = (o[20] - l[20])*100
-    av[10] = (o[21] - l[21])*100
+        v[i] = (o[22+i] - l[22+i])#*100.0
+    v[6] = (o[30] - l[30])#*100.0
+    v[7] = (o[31] - l[31])#*100.0
+    v[8] = (o[34] - l[34])#*100.0
+    v[9] = (o[35] - l[35])#*100.0
+
+    av = [0]*18
+    for i in range(3):
+        av[i] = (o[3+i] - l[3+i])#*100.0
+    for i in range(3):
+        av[3+i] = (o[12+i] - l[12+i])#*100.0
+    av[6] = (o[20] - l[20])#*100.0
+    av[7] = (o[21] - l[21])#*100.0
+    for i in range(10):
+        av[8+i] = (v[i] - last_v[i])
 
     #av = av*100
 
-    v = [0]*14
-    for i in range(14):
-        v[i] = o[22+i] - l[22+i]
+    
 
     #print(len(o),len(v),len(av))
 
 
-    return o,o + v + av
+    return o,v,pelvis_pos + pelvis_vel + joint_angles + joint_vel + mass_pos + mass_vel + bodypart_pos + muscles + obstacle + v + av
 
 def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats ,opt_ac):
     best_result =-1000 
     torch.manual_seed(args.seed+rank)
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
-    num_actions = 18
+    num_actions = 9
     last_state = [0]*41
+    last_v = [0]*10
     #last_state = numpy.zeros(48)
 
     env = RunEnv(visualize=False)
@@ -218,7 +277,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             state = env.reset(difficulty = 0)
             #state = numpy.array(state)
 
-            last_state , state=process_observation(last_state,state)
+            last_state , last_v, state=process_observation(last_state,last_v,state)
 
             state = numpy.array(state)
 
@@ -270,11 +329,12 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     reward += A
                     _,A,_,_ = env.step(action)
                     reward += A
-                next_state, A, done, _ = env.step(action)
+                BB = numpy.append(action,action)
+                next_state, A, done, _ = env.step(BB)
                 reward += A
                 #print(next_state)
                 #last_state = process_observation(state)
-                last_state , next_state=process_observation(last_state,next_state)
+                last_state, last_v, next_state=process_observation(last_state,last_v,next_state)
 
                 next_state = numpy.array(next_state)
                 #print(next_state)
@@ -446,7 +506,8 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
                     _,A,_,_ = env.step(action)
                     reward += A
                 
-                next_state, A, done, _ = env.step(action)
+                BB = numpy.append(action,action)
+                next_state, A, done, _ = env.step(BB)
                 reward += A
                 #next_state = numpy.array(next_state)
                 reward_sum += reward

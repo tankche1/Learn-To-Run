@@ -77,11 +77,10 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=66, 
+parser.add_argument('--feature', type=int, default=59, 
                     help='features num')
-parser.add_argument('--force', action='store_true',
-                    help='force two leg together')
-
+parser.add_argument('--start-epoch', type=int, default=0, 
+                    help='start-epoch')
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -89,7 +88,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     num_inputs = args.feature
-    num_actions = 18
+    num_actions = 9
 
     traffic_light = TrafficLight()
     counter = Counter()
