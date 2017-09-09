@@ -224,11 +224,8 @@ def process_observation(last_state,last_v,observation):
         av[8+i] = (v[i] - last_v[i])
 
     #av = av*100
-
     
-
-    #print(len(o),len(v),len(av))
-
+    
 
     return o,v,pelvis_pos + pelvis_vel + joint_angles + joint_vel + mass_pos + mass_vel + bodypart_pos + muscles + obstacle + v + av
 

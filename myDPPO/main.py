@@ -77,15 +77,17 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=66, 
+parser.add_argument('--feature', type=int, default=189, 
                     help='features num')
 parser.add_argument('--force', action='store_true',
                     help='force two leg together')
+parser.add_argument('--start-epoch', type=int, default=0, 
+                    help='start-epoch')
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['OMP_NUM_THREADS'] = '1' 
     torch.manual_seed(args.seed)
 
     num_inputs = args.feature
@@ -102,7 +104,8 @@ if __name__ == '__main__':
 
     if args.resume:
         print("=> loading checkpoint ")
-        checkpoint = torch.load('../models/32core0.003/811.t7')
+        #checkpoint = torch.load('../models/32corelr0.003/best.t7')
+        checkpoint = torch.load('../../best.t7')
         args.start_epoch = checkpoint['epoch']
         #best_prec1 = checkpoint['best_prec1']
         ac_net.load_state_dict(checkpoint['state_dict'])

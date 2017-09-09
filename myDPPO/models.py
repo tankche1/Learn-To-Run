@@ -14,9 +14,9 @@ class ActorCritic(nn.Module):
 
     def __init__(self, num_inputs, num_outputs, hidden=64):
         super(ActorCritic, self).__init__()
-        self.affine1 = nn.Linear(num_inputs, 200)
-        self.affine2 = nn.Linear(200, 200)
-        self.affine3 = nn.Linear(200,100)
+        self.affine1 = nn.Linear(num_inputs, 300)
+        self.affine2 = nn.Linear(300, 300)
+        self.affine3 = nn.Linear(300,100)
 
         self.action_mean = nn.Linear(100, num_outputs)
         self.action_mean.weight.data.mul_(0.1)

@@ -27,6 +27,7 @@ from osim.env import RunEnv
 import math
 import time
 from models import Shared_grad_buffers
+import random
 
 # from utils import *
 
@@ -135,10 +136,30 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     #ensure_shared_grads(ac_net, shared_model)
     #opt_ac.step()
 
-# 41 to 41+11+14=66
-def process_observation(last_state,observation):
+## 189
+def process_observation(state1,state2,state3,observation,balls):
     o = list(observation) # an array
-    l = list(last_state)
+    l1 = list(state1)
+    l2 = list(state2)
+    l3 = list(state3)
+
+    foot_touch_indicators = []
+    fly0,fly1,fly2,fly3 = 1,1,1,1
+    for i in [29,31,33,35]: # y of toes and taluses
+        touch_ind = 1 if o[i] < 0.05 else 0
+        touch_ind2 = 1 if o[i] < 0.1 else 0
+        if o[i]<0.1:
+            fly0 = 0
+        if l1[i]<0.1:
+            fly1 = 0
+        if l2[i]<0.1:
+            fly2 = 0
+        if l3[i]<0.1:
+            fly3 = 0
+        
+        foot_touch_indicators.append(touch_ind)
+        foot_touch_indicators.append(touch_ind2)
+    fly_air = [fly0,fly1,fly2,fly3]
 
     px = o[1]
     py = o[2]
@@ -155,24 +176,114 @@ def process_observation(last_state,observation):
         o[22+2*i] -= px
         o[22+2*i+1] -= py
 
-    av = [0]*11
-    for i in range(3):
-        av[i] = (o[3+i] - l[3+i])*100
-    for i in range(6):
-        av[3+i] = (o[12+i] - l[12+i])*100
-    av[9] = (o[20] - l[20])*100
-    av[10] = (o[21] - l[21])*100
+    bodies = ['head', 'pelvis', 'torso', 'toes_l', 'toes_r', 'talus_l', 'talus_r']
+    pelvis_pos = [o[0],o[1],o[2]]
+    pelvis_vel = [o[3],o[4],o[5]]
 
-    #av = av*100
+    jnts = ['hip_r','knee_r','ankle_r','hip_l','knee_l','ankle_l']
+    joint_angles = [o[6],o[7],o[8],o[9],o[10],o[11]]
+    joint_vel = [o[12],o[13],o[14],o[15],o[16],o[17]]
 
-    v = [0]*14
+    mass_pos = [o[18],o[19]]
+    mass_vel = [o[20],o[21]]
+
+    bodypart_pos = [o[22],o[23],o[24],o[25],o[26],o[27],o[28],o[29],o[30],o[31],o[32],o[33],o[34],o[35]]
+    muscles = [o[36],o[37]]
+    obstacle = [o[38],o[39],o[40]]
+
+    v = [0]*42 # past 3 frames bodypart v
+
     for i in range(14):
-        v[i] = o[22+i] - l[22+i]
+        v[i] = (o[22+i] - l1[22+i])#*100.0
 
+    for i in range(14):
+        v[14+i] = (l1[22+i]-l2[22+i])
+
+    for i in range(14):
+        v[28+i] = (l2[22+i]-l3[22+i])
+
+    pelvis_past = [px-l1[0],py-l1[1],l1[2],l1[3],l1[4],l1[5],px-l2[0],py-l2[1],l2[2],l2[3],l2[4],l2[5]] 
+
+    av = [0]*34 # past 2 frames bodypart av 
+    #pelvis av
+    for i in range(3):
+        av[i] = (o[3+i] - l1[3+i])
+    for i in range(3):
+        av[3+i] = (l1[3+i] - l2[3+i])
+    for i in range(14):
+        av[6+i] = (o[22+i] - l1[22+i]) - (l1[22+i] - l2[22+i])
+    for i in range(14):
+        av[20+i] = (l1[22+i] - l2[22+i]) - (l2[22+i] - l3[22+i])
+
+    action_past = [l1[i] for i in range(41,59)] + [l2[i] for i in range(41,59)]
+    reward_past = [l1[59],l2[59],l3[59]]
+    #av = av*100
+    
+
+    current_pelvis = o[1]
+    current_ball_relative = o[38]
+    current_ball_height = o[39]       
+    current_ball_radius = o[40]
+    absolute_ball_pos = current_ball_relative + current_pelvis
+
+    ball_vectors = []
+    for i in range(3):
+        if i<len(balls):
+            rel = balls[i][0] - current_pelvis
+            falloff = 0
+            if abs(rel) < 3:
+                falloff = 1
+            #falloff = min(1,max(0,3-abs(rel))) # when ball is closer than 3 falloff become 1
+            ball_vectors.append(min(4,max(-3, rel))/3) # ball pos relative to current pos
+            ball_vectors.append(balls[i][1] * falloff) # radius
+            ball_vectors.append(balls[i][2] * falloff) # height
+        else:
+            ball_vectors.append(0)
+            ball_vectors.append(0)
+            ball_vectors.append(0)
     #print(len(o),len(v),len(av))
 
+    # 41 + 42 + 34 +12 + 36 + 3 + 8 + 4 + 9 = 189
+    return o,l1,l2,o + v + av + pelvis_past + action_past + reward_past + foot_touch_indicators + fly_air + ball_vectors 
 
-    return o,o + v + av
+def addball_if_new(new,balls):
+    current_pelvis = new[1]
+    current_ball_relative = new[38]
+    current_ball_height = new[39]       
+    current_ball_radius = new[40]
+
+    absolute_ball_pos = current_ball_relative + current_pelvis
+
+    if current_ball_radius == 0: # no balls ahead
+       return
+
+    compare_result = [abs(b[0] - absolute_ball_pos) < 1e-9 for b in balls]
+    # [False, False, False, False] if is different ball
+
+    got_new = sum([(1 if r==True else 0)for r in compare_result]) == 0
+
+    if got_new:
+        # for every ball there is
+        for b in balls:
+            # if this new ball is smaller in x than any ball there is
+            if absolute_ball_pos < (b[0] - 1e-9):
+                print(absolute_ball_pos,balls)
+                print('(@ step )'+')Damn! new ball closer than existing balls.')
+                #q.dump(reason='ballcloser')
+                raise Exception('new ball closer than the old ones.')
+
+        balls.append([
+            absolute_ball_pos,
+            current_ball_height,
+            current_ball_radius,
+        ])
+        if len(balls)>3:
+            print(balls)
+            print('(@ step '+')What the fuck you just did! Why num of balls became greater than 3!!!')
+            #q.dump(reason='ballgt3')
+            raise Exception('ball number greater than 3.')
+    else:
+        pass # we already met this ball before.       
 
 def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, shared_obs_stats ,opt_ac):
     best_result =-1000 
@@ -180,10 +291,11 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
-    last_state = [0]*41
+    
     #last_state = numpy.zeros(48)
 
     env = RunEnv(visualize=False)
+    balls = []
 
     #running_state = ZFilter((num_inputs,), clip=5)
     #running_reward = ZFilter((1,), demean=False, clip=10)
@@ -202,7 +314,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         #print('hei')
         #if rank == 0:
         #    print(running_state.rs._n)
-
+        
         signal_init = traffic_light.get()
         memory = Memory()
         ac_net.load_state_dict(shared_model.state_dict())
@@ -215,11 +327,18 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         while num_steps < args.batch_size:
             #state = env.reset()
             #print(num_steps)
-            state = env.reset(difficulty = 0)
+            state1,state2,state3,state = [0]*60, [0]*60, [0]*60, [0]*60
+            state = env.reset(difficulty = 2,seed = (random.randint(0, 10000)))
+            balls = []
             #state = numpy.array(state)
 
-            last_state , state=process_observation(last_state,state)
 
+            #print(len(state1),len(state2),len(state3),len(state))
+            state1, state2, state3, state=process_observation(state1, state2, state3, state,balls)
+
+            #print(state)
+            #print(type(state))
+            #print(len(state))
             state = numpy.array(state)
 
             #state = running_state(state)
@@ -271,10 +390,17 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     _,A,_,_ = env.step(action)
                     reward += A
                 next_state, A, done, _ = env.step(action)
+
+
                 reward += A
+
+                state1 = state1 + list(action) + [reward]
                 #print(next_state)
                 #last_state = process_observation(state)
-                last_state , next_state=process_observation(last_state,next_state)
+                addball_if_new(next_state,balls)
+                #print(len(state1),len(state2),len(state3),len(next_state))
+                state1, state2, state3, next_state=process_observation(state1, state2, state3, next_state,balls)
+                #print(next_state)
 
                 next_state = numpy.array(next_state)
                 #print(next_state)
@@ -315,6 +441,16 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
 
         reward_batch /= num_episodes
         batch = memory.sample()
+        epoch = i_episode
+        if (reward_batch > best_result) and (rank == 0):
+            best_result = reward_batch
+            save_model({
+                    'epoch': epoch ,
+                    'bh': args.bh,
+                    'state_dict': shared_model.state_dict(),
+                    'optimizer' : opt_ac.state_dict(),
+                    'obs' : shared_obs_stats,
+                },PATH_TO_MODEL,'best')
         
         #print('env:')
         #print(time.time()-timer)
@@ -325,7 +461,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
 
         counter.increment()
 
-        epoch = i_episode
+        
         if (i_episode % args.log_interval == 0) and (rank == 0):
 
             print('TrainEpisode {}\tTime{}\tLast reward: {}\tAverage reward {:.2f}'.format(
@@ -335,15 +471,6 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                 reward_sum, reward_batch))
 
             epoch = i_episode
-            if reward_batch > best_result:
-                best_result = reward_batch
-                save_model({
-                        'epoch': epoch ,
-                        'bh': args.bh,
-                        'state_dict': shared_model.state_dict(),
-                        'optimizer' : opt_ac.state_dict(),
-                        'obs' : shared_obs_stats,
-                    },PATH_TO_MODEL,'best')
 
             if epoch%30==1:
                 save_model({
@@ -396,7 +523,7 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
         while num_steps < args.batch_size:
             #state = env.reset()
             #print(num_steps)
-            state = env.reset(difficulty = 0)
+            state = env.reset(difficulty = 2)
 
             last_state = process_observation(state)
             state = process_observation(state)
