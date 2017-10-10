@@ -5,7 +5,6 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 torch.set_default_tensor_type('torch.DoubleTensor')
 
 def square(a):
@@ -146,12 +145,3 @@ class Value(nn.Module):
 
         state_values = self.value_head(x)
         return state_values
-
-if __name__ == '__main__':
-    model = ActorCritic(18,3)
-    for i in range(0,10):
-        A =torch.randn(1,18)
-        A =Variable(A)
-        #print(A)
-        action_mean,action_log_std,action_std,value = model(A)
-        print(action_mean,action_log_std,action_std,value)

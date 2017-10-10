@@ -5,10 +5,6 @@ import math
 import os
 from collections import namedtuple
 from itertools import count
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 import numpy as np
 import numpy
@@ -32,8 +28,6 @@ import math
 import time
 from models import Shared_grad_buffers
 import random
-
-
 
 # from utils import *
 
@@ -123,7 +117,7 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     advantages_var = Variable(advantages)
 
     
-    ratio = torch.exp(log_prob_cur - log_prob_old) #     pnew / pold
+    ratio = torch.exp(log_prob_cur - log_prob_old) # pnew / pold
     surr1 = ratio * advantages_var[:,0]
     surr2 = torch.clamp(ratio, 1.0 - args.clip_epsilon, 1.0 + args.clip_epsilon) * advantages_var[:,0]
     policy_surr = -torch.min(surr1, surr2).mean()
@@ -165,7 +159,7 @@ def process_observation(state1,state2,state3,observation,balls):
         
         foot_touch_indicators.append(touch_ind)
         foot_touch_indicators.append(touch_ind2)
-    fly_air = [fly0]
+    fly_air = [fly0,fly1,fly2,fly3]
 
     px = o[1]
     py = o[2]
@@ -182,6 +176,8 @@ def process_observation(state1,state2,state3,observation,balls):
         o[22+2*i] -= px
         o[22+2*i+1] -= py
 
+    print([o[28],o[29],o[30],o[31]])
+
     bodies = ['head', 'pelvis', 'torso', 'toes_l', 'toes_r', 'talus_l', 'talus_r']
     pelvis_pos = [o[0],o[1],o[2]]
     pelvis_vel = [o[3],o[4],o[5]]
@@ -197,35 +193,29 @@ def process_observation(state1,state2,state3,observation,balls):
     muscles = [o[36],o[37]]
     obstacle = [o[38],o[39],o[40]]
 
-    v = [0]*14 # past 3 frames bodypart v
+    v = [0]*42 # past 3 frames bodypart v
 
     for i in range(14):
         v[i] = (o[22+i] - l1[22+i])#*100.0
 
-    '''
     for i in range(14):
         v[14+i] = (l1[22+i]-l2[22+i])
 
     for i in range(14):
         v[28+i] = (l2[22+i]-l3[22+i])
-    '''
 
     pelvis_past = [px-l1[0],py-l1[1],l1[2],l1[3],l1[4],l1[5],px-l2[0],py-l2[1],l2[2],l2[3],l2[4],l2[5]] 
 
-    av = [0]*17 # past 2 frames bodypart av 
+    av = [0]*34 # past 2 frames bodypart av 
     #pelvis av
     for i in range(3):
         av[i] = (o[3+i] - l1[3+i])
-    '''
     for i in range(3):
         av[3+i] = (l1[3+i] - l2[3+i])
-    '''
     for i in range(14):
-        av[3+i] = (o[22+i] - l1[22+i]) - (l1[22+i] - l2[22+i])
-    '''
+        av[6+i] = (o[22+i] - l1[22+i]) - (l1[22+i] - l2[22+i])
     for i in range(14):
         av[20+i] = (l1[22+i] - l2[22+i]) - (l2[22+i] - l3[22+i])
-    '''
 
     action_past = [l1[i] for i in range(41,59)] + [l2[i] for i in range(41,59)]
     reward_past = [l1[59],l2[59],l3[59]]
@@ -255,10 +245,11 @@ def process_observation(state1,state2,state3,observation,balls):
             ball_vectors.append(0)
     #print(len(o),len(v),len(av))
 
-    # 41 + 42 + 34 +12 + 36 + 3 + 8 + 4 + 9 = 189
-    #return o,l1,l2,o + v + av + pelvis_past + action_past + reward_past + foot_touch_indicators + fly_air + ball_vectors 
-    # 41 + 14 + 17  + 8 + 1 + 9 = 90
-    return o,l1,l2,o + v + av   + foot_touch_indicators + fly_air + ball_vectors 
+    # 41 + 42 + 34 +12  + 3 + 8 + 4 + 9 = 153
+    #print(ball_vectors)
+    #print(fly_air)
+    #print(foot_touch_indicators)
+    return o,l1,l2,o + v + av + pelvis_past  + reward_past + foot_touch_indicators + fly_air + ball_vectors 
 
 def addball_if_new(new,balls):
     current_pelvis = new[1]
@@ -278,7 +269,6 @@ def addball_if_new(new,balls):
 
     if got_new:
         # for every ball there is
-        '''
         for b in balls:
             # if this new ball is smaller in x than any ball there is
             if absolute_ball_pos < (b[0] - 1e-9):
@@ -286,7 +276,6 @@ def addball_if_new(new,balls):
                 print('(@ step )'+')Damn! new ball closer than existing balls.')
                 #q.dump(reason='ballcloser')
                 raise Exception('new ball closer than the old ones.')
-        '''
 
         balls.append([
             absolute_ball_pos,
@@ -307,11 +296,10 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
     torch.set_default_tensor_type('torch.DoubleTensor')
     num_inputs = args.feature
     num_actions = 18
-    plot_epoch = []
-    plot_reward = []
+    
     #last_state = numpy.zeros(48)
 
-    env = RunEnv(visualize=False)
+    env = RunEnv(visualize=True)
     balls = []
 
     #running_state = ZFilter((num_inputs,), clip=5)
@@ -345,10 +333,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             #state = env.reset()
             #print(num_steps)
             state1,state2,state3,state = [0]*60, [0]*60, [0]*60, [0]*60
-            #state = env.reset(difficulty = 2,seed = (random.randint(0, 10000)))
-            #if (i_episode+rank)%3 == 0:
-            #    state = env.reset(difficulty = 0)
-            state = env.reset(difficulty = args.dif)
+            state = env.reset(difficulty = 2,seed = (random.randint(0, 10000)))
             balls = []
             #state = numpy.array(state)
 
@@ -453,7 +438,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     break
 
                 state = next_state
-            num_steps += (t-1) 
+            num_steps += (t-1)
             num_episodes += 1
 
             reward_batch += reward_sum
@@ -462,8 +447,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         reward_batch /= num_episodes
         batch = memory.sample()
         epoch = i_episode
-
-        
+        '''
         if (reward_batch > best_result) and (rank == 0):
             best_result = reward_batch
             save_model({
@@ -473,7 +457,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     'optimizer' : opt_ac.state_dict(),
                     'obs' : shared_obs_stats,
                 },PATH_TO_MODEL,'best')
-        
+        '''
         
         #print('env:')
         #print(time.time()-timer)
@@ -492,22 +476,9 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                 time.strftime("%Hh %Mm %Ss",
                               time.gmtime(time.time() - start_time)),
                 best_result, reward_batch))
-
-            plot_epoch.append(i_episode)
-            plot_reward.append(reward_batch)
-            #epoch = range(0,3000)
-            #rewards = range(0,6000,2)
-            
-            fig = plt.figure(1)
-            plt.plot(plot_epoch, plot_reward)
-            plt.xlabel('epoch')
-            plt.ylabel('score')
-            #plt.show()
-
-            fig.savefig(PATH_TO_MODEL+'/plot.pdf')
-
+            '''
             epoch = i_episode
-            
+
             if epoch%30==1:
                 save_model({
                         'epoch': epoch ,
@@ -516,7 +487,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                         'optimizer' : opt_ac.state_dict(),
                         'obs' :shared_obs_stats,
                     },PATH_TO_MODEL,epoch)
-            
+            '''
         # wait for a new signal to continue
         while traffic_light.get() == signal_init:
             pass
@@ -560,7 +531,7 @@ def test(rank, args,shared_model, shared_obs_stats, opt_ac):
         while num_steps < args.batch_size:
             #state = env.reset()
             #print(num_steps)
-            state = env.reset(difficulty = 0)
+            state = env.reset(difficulty = 2)
 
             last_state = process_observation(state)
             state = process_observation(state)

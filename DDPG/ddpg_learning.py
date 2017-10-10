@@ -129,10 +129,6 @@ def ddpg_learning(
             reward = 0 
             next_state, A, done, _ = env.step(action)
             reward += A
-            next_state, A, done, _ = env.step(action)
-            reward += A
-            next_state, A, done, _ = env.step(action)
-            reward += A
 
             next_state = process_observation(next_state)
             last_state ,next_state = transform_observation(last_state,next_state)

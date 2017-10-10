@@ -77,14 +77,12 @@ parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
 parser.add_argument('--test', action='store_true',
                     help='test ')
-parser.add_argument('--feature', type=int, default=90, 
+parser.add_argument('--feature', type=int, default=153, 
                     help='features num')
 parser.add_argument('--force', action='store_true',
                     help='force two leg together')
 parser.add_argument('--start-epoch', type=int, default=0, 
                     help='start-epoch')
-parser.add_argument('--dif', type=int, default=0, 
-                    help='difficulty')
 
 
 if __name__ == '__main__':
@@ -106,7 +104,7 @@ if __name__ == '__main__':
 
     if args.resume:
         print("=> loading checkpoint ")
-        checkpoint = torch.load('../models/best.t7')
+        checkpoint = torch.load('../../7.87.t7')
         #checkpoint = torch.load('../../best.t7')
         args.start_epoch = checkpoint['epoch']
         #best_prec1 = checkpoint['best_prec1']
@@ -143,7 +141,5 @@ if __name__ == '__main__':
         p = mp.Process(target=train, args=(rank, args, traffic_light, counter,  ac_net, shared_grad_buffers, shared_obs_stats,opt_ac))
         p.start()
         processes.append(p)
-        time.sleep(0.3)
-
     for p in processes:
         p.join()
