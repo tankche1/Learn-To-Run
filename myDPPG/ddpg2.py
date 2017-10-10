@@ -128,9 +128,18 @@ class nnagent(object):
 
         a2 = self.actor_target(s2)
         q2 = self.critic_target([s2,a2])
-        q1_target = r1 + (1-isdone)*self.discount_factor*q2
+        #print(type(r1))
+        #print(type(isdone))
+        #print(float(r1))
+        #print(type(q2))
+
+        #return 
+        q1_target = Variable(torch.FloatTensor(r1)) + Variable(torch.FloatTensor(1-isdone))*self.discount_factor*q2
+        #print(type(q1_target))
         q1_predict = self.critic([s1,a1])
         critic_loss = F.mse_loss(q1_target,q1_predict)
+
+        #print(type(critic_loss))
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
@@ -157,7 +166,8 @@ class nnagent(object):
         total_size = batch_size
         epochs = 1
 
-        if memory.size() > total_size*128:
+        #if memory.size() > total_size*128:
+        if memory.size() > 128:
             for i in range(self.train_multiplier):
                 [s1,a1,r1,isdone,s2] = memory.sample_batch(batch_size)
 
@@ -308,7 +318,7 @@ if __name__ == '__main__':
 
     def playifavailable(nl):
         while True:
-            envid = Farm.acq()
+            envid = Farm.acq(args.num_processes)
             if envid == False:
                 time.sleep(0.01)
                 pass
