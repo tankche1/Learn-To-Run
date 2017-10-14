@@ -1,4 +1,3 @@
-
 import argparse
 import sys
 import math
@@ -75,78 +74,17 @@ parser.add_argument('--num-processes', type=int, default=4,
                     help='how many training processes to use (default: 4)')
 parser.add_argument('--skip', action='store_true',
                     help='execute an action three times')
-parser.add_argument('--test', action='store_true',
-                    help='test ')
 parser.add_argument('--feature', type=int, default=91, 
                     help='features num')
-parser.add_argument('--force', action='store_true',
-                    help='force two leg together')
 parser.add_argument('--start-epoch', type=int, default=0, 
                     help='start-epoch')
-parser.add_argument('--dif', type=int, default=0, 
+parser.add_argument('--dif', type=int, default=2, 
                     help='difficulty')
 
+args = parser.parse_args()
 
-if __name__ == '__main__':
-    args = parser.parse_args()
-    os.environ['OMP_NUM_THREADS'] = '1' 
-    torch.manual_seed(args.seed)
+class PPO:
+     
 
-    num_inputs = args.feature
-    num_actions = 18
+class Worker:
 
-    traffic_light = TrafficLight()
-    counter = Counter()
-
-    ac_net = ActorCritic(num_inputs, num_actions)
-    opt_ac = optim.Adam(ac_net.parameters(), lr=args.lr)
-
-    shared_grad_buffers = Shared_grad_buffers(ac_net)
-    shared_obs_stats = Shared_obs_stats(num_inputs)
-
-    if args.resume:
-        print("=> loading checkpoint ")
-        checkpoint = torch.load('../models/16coreplot/best.t7')
-        #checkpoint = torch.load('../../best.t7')
-        args.start_epoch = checkpoint['epoch']
-        #best_prec1 = checkpoint['best_prec1']
-        ac_net.load_state_dict(checkpoint['state_dict'])
-        opt_ac.load_state_dict(checkpoint['optimizer'])
-        opt_ac.state = defaultdict(dict, opt_ac.state)
-        #print(opt_ac)
-        shared_obs_stats = checkpoint['obs']
-
-        print(ac_net)
-        print("=> loaded checkpoint  (epoch {})"
-                .format(checkpoint['epoch']))
-
-    ac_net.share_memory()
-
-    
-    #opt_ac.share_memory()
-    #running_state = ZFilter((num_inputs,), clip=5)
-    
-
-    processes = []
-
-    p = mp.Process(target=listen)
-    p.start()
-
-    if args.test:
-        p = mp.Process(target=test, args=(args.num_processes, args, ac_net, shared_obs_stats, opt_ac))
-        p.start()
-        processes.append(p)
-
-
-    p = mp.Process(target=chief, args=(args, args.num_processes+1, traffic_light, counter, ac_net,shared_grad_buffers, opt_ac))
-    p.start()
-    processes.append(p)
-
-    for rank in range(0, args.num_processes):
-        p = mp.Process(target=train, args=(rank, args, traffic_light, counter,  ac_net, shared_grad_buffers, shared_obs_stats,opt_ac))
-        p.start()
-        processes.append(p)
-        time.sleep(0.3)
-
-    for p in processes:
-        p.join()

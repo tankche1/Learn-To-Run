@@ -32,7 +32,20 @@ import math
 import time
 from models import Shared_grad_buffers
 import random
+import torch.multiprocessing as mp
 
+pq = mp.Queue()
+
+def listen():
+    tot = []
+    while(True):
+        msg = pq.get()
+        if msg[0]=='Time':
+            tot.append(msg[1])
+            if len(tot) == 16:
+                sorted(tot)
+                print('min: '+str(tot[0]) +' max: ' + str(tot[15]) + ' middle: ' +str(tot[7]))
+                tot = []
 
 
 # from utils import *
@@ -144,6 +157,7 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
 
 ## 189
 def process_observation(state1,state2,state3,observation,balls):
+
     o = list(observation) # an array
     l1 = list(state1)
     l2 = list(state2)
@@ -171,6 +185,10 @@ def process_observation(state1,state2,state3,observation,balls):
     py = o[2]
     pvx = o[4]
     pvy = o[5]
+
+    no_obstacle = [0]
+    if px >6.0:
+        no_obstacle = [1]
 
     o[18] -= px
     o[19] -= py
@@ -257,8 +275,8 @@ def process_observation(state1,state2,state3,observation,balls):
 
     # 41 + 42 + 34 +12 + 36 + 3 + 8 + 4 + 9 = 189
     #return o,l1,l2,o + v + av + pelvis_past + action_past + reward_past + foot_touch_indicators + fly_air + ball_vectors 
-    # 41 + 14 + 17  + 8 + 1 + 9 = 90
-    return o,l1,l2,o + v + av   + foot_touch_indicators + fly_air + ball_vectors 
+    # 41 + 14 + 17  + 8 + 1 + 9 + 1= 91
+    return o,l1,l2,o + v + av   + foot_touch_indicators + fly_air + ball_vectors + no_obstacle
 
 def addball_if_new(new,balls):
     current_pelvis = new[1]
@@ -331,6 +349,8 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         #print('hei')
         #if rank == 0:
         #    print(running_state.rs._n)
+
+        epoch_start_time = time.time()
         
         signal_init = traffic_light.get()
         memory = Memory()
@@ -350,6 +370,7 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
             #    state = env.reset(difficulty = 0)
             state = env.reset(difficulty = args.dif)
             balls = []
+            tot_frame = 0
             #state = numpy.array(state)
 
 
@@ -410,6 +431,8 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
                     _,A,_,_ = env.step(action)
                     reward += A
                 next_state, A, done, _ = env.step(action)
+                tot_frame = tot_frame + 1
+
 
 
                 reward += A
@@ -463,7 +486,6 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         batch = memory.sample()
         epoch = i_episode
 
-        
         if (reward_batch > best_result) and (rank == 0):
             best_result = reward_batch
             save_model({
@@ -484,14 +506,14 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
 
         counter.increment()
 
-        
+        pq.put(('Time',time.time()-epoch_start_time))
         if (i_episode % args.log_interval == 0) and (rank == 0):
 
-            print('TrainEpisode {}\tTime{}\tBest reward: {}\tAverage reward {:.2f}'.format(
+            print('TrainEpisode {}\tTime{}\tBest reward: {}\tAverage reward {:.2f} frames {}'.format(
                 i_episode,
                 time.strftime("%Hh %Mm %Ss",
                               time.gmtime(time.time() - start_time)),
-                best_result, reward_batch))
+                best_result, reward_batch,tot_frame))
 
             plot_epoch.append(i_episode)
             plot_reward.append(reward_batch)
@@ -520,183 +542,3 @@ def train(rank,args,traffic_light, counter, shared_model, shared_grad_buffers, s
         # wait for a new signal to continue
         while traffic_light.get() == signal_init:
             pass
-
-        
-        
-def test(rank, args,shared_model, shared_obs_stats, opt_ac):
-    best_result =-1000 
-    torch.manual_seed(args.seed+rank)
-    torch.set_default_tensor_type('torch.DoubleTensor')
-    num_inputs = args.feature
-    num_actions = 18
-    last_state = [1]*48
-    #last_state = numpy.zeros(41)
-
-    if args.render:
-        env = RunEnv(visualize=True)
-    else:
-        env = RunEnv(visualize=False)
-
-    #running_state = ZFilter((num_inputs,), clip=5)
-    #running_reward = ZFilter((1,), demean=False, clip=10)
-    episode_lengths = []
-
-    PATH_TO_MODEL = '../models/'+str(args.bh)
-
-    if not os.path.exists(PATH_TO_MODEL):
-        os.mkdir(PATH_TO_MODEL)
-
-    ac_net = ActorCritic(num_inputs, num_actions)
-
-    start_time = time.time()
-
-    for i_episode in count(1):
-        memory = Memory()
-        ac_net.load_state_dict(shared_model.state_dict())
-
-        num_steps = 0
-        reward_batch = 0
-        num_episodes = 0
-        while num_steps < args.batch_size:
-            #state = env.reset()
-            #print(num_steps)
-            state = env.reset(difficulty = 0)
-
-            last_state = process_observation(state)
-            state = process_observation(state)
-            last_state ,state = transform_observation(last_state,state)
-
-            state = numpy.array(state)
-
-            #state = numpy.array(state)
-            #global last_state
-            #last_state = state
-            #last_state,_ = update_observation(last_state,state)
-            #last_state,state = update_observation(last_state,state)
-            #print(state.shape[0])
-            #print(state[41])
-            #state = running_state(state)
-            state = Variable(torch.Tensor(state).unsqueeze(0))
-            shared_obs_stats.observes(state)
-            state = shared_obs_stats.normalize(state)
-            state = state.data[0].numpy()
-
-            reward_sum = 0
-            for t in range(10000): # Don't infinite loop while learning
-                #print(t)
-                #timer = time.time()
-                if args.use_sep_pol_val:
-                    action = select_action(state)
-                else:
-                    action = select_action_actor_critic(state,ac_net)
-
-                #print(action)
-                action = action.data[0].numpy()
-                if numpy.any(numpy.isnan(action)):
-                    print(action)
-                    puts('ERROR')
-                    return
-                #print('NN take:')
-                #print(time.time()-timer)
-                #print(action)
-                #print("------------------------")
-
-                #timer = time.time()
-                reward = 0
-                if args.skip:
-                    #env.step(action)
-                    _,A,_,_ = env.step(action)
-                    reward += A
-                    _,A,_,_ = env.step(action)
-                    reward += A
-                
-                next_state, A, done, _ = env.step(action)
-                reward += A
-                #next_state = numpy.array(next_state)
-                reward_sum += reward
-
-                next_state = process_observation(next_state)
-                last_state ,next_state = transform_observation(last_state,next_state)
-
-                next_state = numpy.array(next_state)
-                #print('env take:')
-                #print(time.time()-timer)
-
-                #timer = time.time()
-
-                #last_state ,next_state = update_observation(last_state,next_state)
-                #next_state = running_state(next_state)
-                next_state = Variable(torch.Tensor(next_state).unsqueeze(0))
-                shared_obs_stats.observes(next_state)
-                next_state = shared_obs_stats.normalize(next_state)
-                next_state = next_state.data[0].numpy()
-                #print(next_state[41:82])
-
-                mask = 1
-                if done:
-                    mask = 0
-
-                #print('update take:')
-                #print(time.time()-timer)
-
-                #timer = time.time()
-
-                memory.push(state, np.array([action]), mask, next_state, reward)
-
-                #print('memory take:')
-                #print(time.time()-timer)
-
-                #if args.render:
-                #    env.render()
-                if done:
-                    break
-
-                state = next_state
-                
-            num_steps += (t-1)
-            num_episodes += 1
-            #print(num_episodes)
-            reward_batch += reward_sum
-
-        #print(num_episodes)
-        reward_batch /= num_episodes
-        batch = memory.sample()
-        
-        #update_params_actor_critic(batch,args,shared_model,ac_net,opt_ac)
-        time.sleep(60)
-
-        if i_episode % args.log_interval == 0:
-            File = open(PATH_TO_MODEL + '/record.txt', 'a+')
-            File.write("Time {}, episode reward {}, Average reward {}".format(
-                time.strftime("%Hh %Mm %Ss",
-                              time.gmtime(time.time() - start_time)),
-                reward_sum, reward_batch))
-            File.close()
-            #print('TestEpisode {}\tLast reward: {}\tAverage reward {:.2f}'.format(
-            #    i_episode, reward_sum, reward_batch))
-            print("Time {}, episode reward {}, Average reward {}".format(
-                time.strftime("%Hh %Mm %Ss",
-                              time.gmtime(time.time() - start_time)),
-                reward_sum, reward_batch))
-            #print('!!!!')
-
-        epoch = i_episode
-        if reward_batch > best_result:
-            best_result = reward_batch
-            save_model({
-                    'epoch': epoch ,
-                    'bh': args.bh,
-                    'state_dict': shared_model.state_dict(),
-                    'optimizer' : opt_ac.state_dict(),
-                    #'obs' : shared_obs_stats
-                },PATH_TO_MODEL,'best')
-
-        if epoch%30==1:
-            save_model({
-                    'epoch': epoch ,
-                    'bh': args.bh,
-                    'state_dict': shared_model.state_dict(),
-                    'optimizer' : opt_ac.state_dict(),
-                    #'obs' :shared_obs_stats
-                },PATH_TO_MODEL,epoch)
-

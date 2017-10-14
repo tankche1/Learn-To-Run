@@ -55,7 +55,7 @@ class ActorCritic(nn.Module):
             action_std = torch.exp(action_log_std)
 
             value = self.value_head(x)
-
+        print(action_log_std)
         return action_mean, action_log_std, action_std, value
 
 class Shared_grad_buffers():

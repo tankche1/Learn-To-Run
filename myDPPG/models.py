@@ -6,6 +6,7 @@ import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import torch.optim as optim
 
 
 class ActorNN(nn.Module):
@@ -62,14 +63,26 @@ def create_critic_network(ids,ods):
     return critic_network
 
 if __name__ == '__main__':
-    Actor = create_actor_network(41,18)
-    Critic = create_critic_network(41,18)
-    States = torch.randn(64,41)
-    Actions = torch.randn(64,18)
+    for ep in range(100):
+        print(ep)
+        Actor = create_actor_network(41,18)
+        Critic = create_critic_network(41,18)
+        States = torch.randn(64,41)
+        Actions = torch.randn(64,18)
+        ans = Variable(torch.randn(64,1))
 
-    ans_actor = Actor(Variable(States))
-    ans_critic = Critic([Variable(States),Variable(Actions)])
+        actor_optimizer = optim.Adam(Actor.parameters(), lr=1e-4)
+        critic_optimizer = optim.Adam(Critic.parameters(), lr=3e-4)
 
-    print(ans_actor)
-    print(ans_critic)
+        ans_actor = Actor(Variable(States))
+        ans_critic = Critic([Variable(States),Variable(Actions)])
+
+        critic_loss = F.mse_loss(ans_critic,ans)
+
+        critic_optimizer.zero_grad()
+        critic_loss.backward()
+        critic_optimizer.step()
+
+    #print(ans_actor)
+    #print(ans_critic)
 

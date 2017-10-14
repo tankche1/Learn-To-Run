@@ -21,12 +21,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
+import os
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+from collections import defaultdict
 
 torch.set_default_tensor_type('torch.FloatTensor')
 
 parser = argparse.ArgumentParser(description='PyTorch DDPG')
-parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
-                    help='discount factor (default: 0.99)')
+parser.add_argument('--gamma', type=float, default=0.985, metavar='G',
+                    help='discount factor (default: 0.985)')
 parser.add_argument('--lr', type=float, default=1e-3, 
                     help='learning rate (default: 1e-3)')
 parser.add_argument('--tau', type=float, default=0.97, metavar='G',
@@ -48,6 +55,9 @@ parser.add_argument('--dif', type=int, default=0,
 parser.add_argument('--train_multiplier', type=int, default=1, 
                     help='train_multiplier')
 
+'''
+python: ../nptl/pthread_mutex_lock.c:117: __pthread_mutex_lock: Assertion `mutex->__data.__owner == 0' failed.
+'''
 
 args = parser.parse_args()
 PATH_TO_MODEL = '../models/'+str(args.bh)
@@ -93,14 +103,17 @@ class nnagent(object):
         ids, ods = self.inputdims, self.outputdims
         print('inputdims:{}, outputdims:{}'.format(ids,ods))
 
-        self.actor = models.create_actor_network(ids,ods)
-        self.critic = models.create_critic_network(ids,ods)
-        self.actor_target = models.create_actor_network(ids,ods)
-        self.critic_target = models.create_critic_network(ids,ods)
+        self.actor = models.create_actor_network(ids,ods).cuda()
+        self.critic = models.create_critic_network(ids,ods).cuda()
+        self.actor_target = models.create_actor_network(ids,ods).cuda()
+        self.critic_target = models.create_critic_network(ids,ods).cuda()
+        self.critic_criterion = nn.MSELoss().cuda()
 
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=1e-4)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=3e-4)
 
+        self.plot_epoch = [0]
+        self.plot_reward = [0]
         import threading as th
         self.lock = th.Lock()
 
@@ -118,12 +131,15 @@ class nnagent(object):
         for target_param, param in zip(target_model.parameters(), model.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
+    def mse_loss(input, target):
+        return torch.sum((input - target)^2) / input.data.nelement()
+
     def update(self,tup):
         [s1,a1,r1,isdone,s2] = tup
 
-        s1 = Variable(torch.FloatTensor(s1))
-        a1 = Variable(torch.FloatTensor(a1))
-        s2 = Variable(torch.FloatTensor(s2))
+        s1 = Variable(torch.FloatTensor(s1).cuda(),requires_grad = True)
+        a1 = Variable(torch.FloatTensor(a1).cuda(),requires_grad = True)
+        s2 = Variable(torch.FloatTensor(s2).cuda(),requires_grad = True)
         
 
         a2 = self.actor_target(s2)
@@ -134,26 +150,35 @@ class nnagent(object):
         #print(type(q2))
 
         #return 
-        q1_target = Variable(torch.FloatTensor(r1)) + Variable(torch.FloatTensor(1-isdone))*self.discount_factor*q2
-        #print(type(q1_target))
+        q1_target = Variable(torch.FloatTensor(r1).cuda()) + Variable(torch.FloatTensor(1-isdone).cuda())*self.discount_factor*q2
+        q1_target = Variable(q1_target.data,requires_grad = False)
+        #q1_target.requires_grad = False
+        #print(q1_target.data)
         q1_predict = self.critic([s1,a1])
-        critic_loss = F.mse_loss(q1_target,q1_predict)
-
+        #print(q1_target.data.size(),q1_predict.data.size())
+        #critic_loss = F.mse_loss(q1_target,q1_predict)
+        critic_loss = self.critic_criterion(q1_predict,q1_target)
         #print(type(critic_loss))
 
-        # Optimize the critic
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
+        
+
 
         a1_predict = self.actor(s1)
         q1_predict = self.critic_target([s1,a1_predict])
         actor_loss = -q1_predict.mean()
 
-        # Optimize the actor
+       
+        self.lock.acquire()
+        # Optimize the critic
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+        
+         # Optimize the actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
+        self.lock.release()
 
         self.tau = 1e-3
         # Update the target networks
@@ -166,12 +191,13 @@ class nnagent(object):
         total_size = batch_size
         epochs = 1
 
-        #if memory.size() > total_size*128:
-        if memory.size() > 128:
+        if memory.size() > total_size*128:
+        #if memory.size() > 128:
             for i in range(self.train_multiplier):
                 [s1,a1,r1,isdone,s2] = memory.sample_batch(batch_size)
-
+                #self.lock.acquire()
                 self.update([s1,a1,r1,isdone,s2]) 
+                #self.lock.release()
 
     def feed_one(self,tup):
         self.rpm.add(tup)
@@ -221,6 +247,13 @@ class nnagent(object):
         print('episode done in {} steps in {:.2f} sec, {:.4f} sec/step, got reward :{:.2f}'.format(
         steps,totaltime,totaltime/steps,total_reward
         ))
+
+        self.plot_epoch.append(self.plot_epoch[-1]+1)
+        self.plot_reward.append(total_reward)
+        #epoch = range(0,3000)
+        #rewards = range(0,6000,2)
+            
+        
         self.lock.acquire()
 
         for t in episode_memory:
@@ -232,15 +265,24 @@ class nnagent(object):
 
         return
 
+    def plot(self):
+        fig = plt.figure(1)
+        plt.plot(self.plot_epoch, self.plot_reward)
+        plt.xlabel('epoch')
+        plt.ylabel('score')
+            #plt.show()
+
+        fig.savefig(PATH_TO_MODEL+'/plot.pdf')
+
     def act(self,observation,curr_noise=None):
         actor, critic = self.actor,self.critic
         obs = np.reshape(observation,(1,len(observation)))
 
-        obs = Variable(torch.FloatTensor(obs))
+        obs = Variable(torch.FloatTensor(obs).cuda())
 
         actions = self.actor(obs)
 
-        actions = actions.data[0].numpy()
+        actions = actions.data[0].cpu().numpy()
 
 
         '''
@@ -254,13 +296,13 @@ class nnagent(object):
 
     def save_weights(self,name):
         save_model({
-                'actor': actor.state_dict(),
-                'critic': critic.state_dict(),
-                'actor_target': actor_target.state_dict(),
-                'critic_target': critic_target.state_dict(),
-                'actor_optimizer': actor_optimizer.state.dict(),
-                'critic_optimizer' : critic_optimizer.state_dict(),
-            },PATH_TO_MODEL,str(name)+'.t7')
+                'actor': self.actor.state_dict(),
+                'critic': self.critic.state_dict(),
+                'actor_target': self.actor_target.state_dict(),
+                'critic_target': self.critic_target.state_dict(),
+                'actor_optimizer': self.actor_optimizer.state_dict(),
+                'critic_optimizer' : self.critic_optimizer.state_dict(),
+            },PATH_TO_MODEL,str(name))
 
     def load_weights(self,name):
         print("=> loading checkpoint ")
@@ -283,6 +325,9 @@ from osim.env import RunEnv
 if __name__ == '__main__':
 
     agent = nnagent(args)
+
+    if args.resume:
+        agent.load_weights('../models/40coreddpg/3000')
     
     noise_level = 2.
     noise_decay_rate = 0.001
@@ -349,5 +394,8 @@ if __name__ == '__main__':
             if (i+1) % 1000 == 0:
                 # save the training result.
                 save(str(i+1))
+                agent.plot()
+                #return
+
 
     r(100000)

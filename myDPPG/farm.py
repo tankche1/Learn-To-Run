@@ -389,8 +389,8 @@ class remoteEnv:
 
         #self.fp._pyroRelease()
 
-    def __del__(self):
-        self.rel()
+    #def __del__(self):
+    #    self.rel()
 
 def new_farm(n):
     Farm = farm()
