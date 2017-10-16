@@ -107,6 +107,7 @@ def update_params_actor_critic(batch,args,ac_net,opt_ac):
     prev_value = 0
     prev_advantage = 0
     for i in reversed(range(rewards.size(0))):
+        # discounted reward
         returns[i] = rewards[i] + args.gamma * prev_return * masks[i]
         deltas[i] = rewards[i] + args.gamma * prev_value * masks[i] - values.data[i]
         advantages[i] = deltas[i] + args.gamma * args.tau * prev_advantage * masks[i]
