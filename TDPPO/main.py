@@ -94,6 +94,14 @@ QUEUE = Queue.Queue()
 ROLLING_EVENT.set()
 UPDATE_EVENT.clear()
 
+def save_model(model,PATH_TO_MODEL,epoch):
+    print('saving the model ...')
+    if not os.path.exists(PATH_TO_MODEL):
+        os.mkdir(PATH_TO_MODEL)
+
+    torch.save(model,PATH_TO_MODEL+'/'+str(epoch)+'.t7')
+    print('done.')
+
 class nnagent:
 
     def __init__(self,args):
@@ -165,8 +173,9 @@ class nnagent:
                 #returns[i] = rewards[i] + args.gamma * prev_return * masks[i]
                 returns[i] = discounted_rewards[i]
                 #deltas[i] = rewards[i] + args.gamma * prev_value * masks[i] - values.data[i]
-                deltas[i] = rewards[i] + args.gamma * next_state_values.data[i][0] * masks[i] - values.data[i]
-                advantages[i] = deltas[i] #+ args.gamma * args.tau * prev_advantage * masks[i]
+                deltas[i] = rewards[i] + args.gamma * next_state_values.data[i][0] * masks[i] - values.data[i][0]
+                advantages[i] = deltas[i] 
+                #+ args.gamma * args.tau * prev_advantage * masks[i]
                 #prev_return = returns[i, 0]
                 #prev_value = values.data[i, 0]
                 #prev_advantage = advantages[i, 0]
@@ -177,7 +186,7 @@ class nnagent:
             #print(values.data.size(),targets.data.size())
             value_loss = (values - targets).pow(2.).mean()
             value_loss.backward()
-            self.critic_optimizer.step()
+            #self.critic_optimizer.step()
 
             action_var = Variable(actions)
 
@@ -197,6 +206,7 @@ class nnagent:
             advantages = (advantages - advantages.mean()) / advantages.std()
             advantages_var = Variable(advantages)
 
+
             #opt_policy.zero_grad()
             self.actor_optimizer.zero_grad()
             ratio = torch.exp(log_prob_cur - log_prob_old) # pnew / pold
@@ -205,7 +215,9 @@ class nnagent:
             policy_surr = -torch.min(surr1, surr2).mean()
             policy_surr.backward()
             torch.nn.utils.clip_grad_norm(self.actor.parameters(), 40)
-            self.actor_optimizer.step()
+            #for n,p in self.actor.named_parameters():
+            #    print(p._grad)
+            #self.actor_optimizer.step()
 
             UPDATE_EVENT.clear()
             ROLLING_EVENT.set()
@@ -248,6 +260,8 @@ class nnagent:
 
             observation, reward, done, _info = env.step(action)
 
+            #print(observation,reward,done)
+
             mask = 1
             if done:
                 mask = 0
@@ -264,7 +278,11 @@ class nnagent:
             self.msize = self.msize + 1
             if done or self.msize >= self.batch_size:
 
-                value = self.get_value(observation)
+                if done:
+                    value = numpy.array([0])
+                else:
+                    value = self.get_value(observation)
+
                 discounted_r = []
                 for r in buffer_r[::-1]:
                     value = r + value * self.GAMMA
@@ -316,7 +334,7 @@ class nnagent:
 
             noise = curr_noise * 5 - np.arange(self.outputdims) * 12.0 - 30
         '''
-        return actions
+        #return actions
 
     def save_weights(self,name):
         save_model({
@@ -402,7 +420,7 @@ if __name__ == '__main__':
 
             if (i+1) % 1000 == 0:
                 # save the training result.
-                # save(str(i+1))
+                save(str(i+1))
                 agent.plot()
                 #return
     open_update()

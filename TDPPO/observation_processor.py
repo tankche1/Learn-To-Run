@@ -133,8 +133,107 @@ _stepsize = 0.01
 flatten = lambda l: [item for sublist in l for item in sublist]
 
 # expand observation from 48 to 48*7 dims
-processed_dims = 48 + 14*5 + 9 + 8
+#processed_dims = 48 + 14*5 + 9 + 8
+processed_dims = 68
 # processed_dims = 41*8
+
+def generate_observation(observation,state1):
+
+    if state1 == None:
+        state1 = observation
+
+    o = list(observation) # an array
+    l1 = list(state1)
+
+    foot_touch_indicators = []
+    fly0 = 1
+    for i in [29,31,33,35]: # y of toes and taluses
+        touch_ind = 1 if o[i] < 0.05 else 0
+        touch_ind2 = 1 if o[i] < 0.1 else 0
+        if o[i]<0.1:
+            fly0 = 0
+        
+        foot_touch_indicators.append(touch_ind)
+        foot_touch_indicators.append(touch_ind2)
+    fly_air = [fly0]
+
+    px = o[1]
+    py = o[2]
+    pvx = o[4]
+    pvy = o[5]
+
+    no_obstacle = [0]
+    if px >6.0:
+        no_obstacle = [1]
+
+    o[18] -= px
+    o[19] -= py
+
+    o[20] -= pvx
+    o[21] -= pvy
+
+    for i in range(7):
+        o[22+2*i] -= px
+        o[22+2*i+1] -= py
+
+    bodies = ['head', 'pelvis', 'torso', 'toes_l', 'toes_r', 'talus_l', 'talus_r']
+    pelvis_pos = [o[0],o[1],o[2]]
+    pelvis_vel = [o[3],o[4],o[5]]
+
+    jnts = ['hip_r','knee_r','ankle_r','hip_l','knee_l','ankle_l']
+    joint_angles = [o[6],o[7],o[8],o[9],o[10],o[11]]
+    joint_vel = [o[12],o[13],o[14],o[15],o[16],o[17]]
+
+    mass_pos = [o[18],o[19]]
+    mass_vel = [o[20],o[21]]
+
+    bodypart_pos = [o[22],o[23],o[24],o[25],o[26],o[27],o[28],o[29],o[30],o[31],o[32],o[33],o[34],o[35]]
+    muscles = [o[36],o[37]]
+    obstacle = [o[38],o[39],o[40]]
+
+    v = [0]*14 # past 3 frames bodypart v
+
+    for i in range(14):
+        v[i] = (o[22+i] - l1[22+i])#*100.0
+
+    '''
+    for i in range(14):
+        v[14+i] = (l1[22+i]-l2[22+i])
+
+    for i in range(14):
+        v[28+i] = (l2[22+i]-l3[22+i])
+    '''
+
+    pelvis_past = [px-l1[0],py-l1[1],l1[2],l1[3],l1[4],l1[5]] 
+
+    av = [0]*3 # past 2 frames bodypart av 
+    #pelvis av
+    for i in range(3):
+        av[i] = (o[3+i] - l1[3+i])
+    '''
+    for i in range(3):
+        av[3+i] = (l1[3+i] - l2[3+i])
+    '''
+    #for i in range(14):
+    #    av[3+i] = (o[22+i] - l1[22+i]) - (l1[22+i] - l2[22+i])
+    '''
+    for i in range(14):
+        av[20+i] = (l1[22+i] - l2[22+i]) - (l2[22+i] - l3[22+i])
+    '''
+
+    #action_past = [l1[i] for i in range(41,59)] + [l2[i] for i in range(41,59)]
+    #reward_past = [l1[59],l2[59],l3[59]]
+    #av = av*100
+    
+
+
+    # 41 + 42 + 34 +12 + 36 + 3 + 8 + 4 + 9 = 189
+    #return o,l1,l2,o + v + av + pelvis_past + action_past + reward_past + foot_touch_indicators + fly_air + ball_vectors 
+    # 41 + 14 + 17  + 8 + 1 + 9 + 1= 91
+    #print(len(o + v + av   + foot_touch_indicators + fly_air + no_obstacle))
+    return o + v + av   + foot_touch_indicators + fly_air + no_obstacle, o
+
+'''
 def generate_observation(new, old=None, step=None):
 
     # # debug
@@ -285,6 +384,7 @@ def generate_observation(new, old=None, step=None):
     #     print(i,n)
 
     return final_observation, old
+'''
 
 if __name__=='__main__':
     ff = fifo(4)

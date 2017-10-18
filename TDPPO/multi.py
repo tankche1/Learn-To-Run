@@ -18,7 +18,7 @@ class fastenv:
     def obg(self,plain_obs):
         # observation generator
         # derivatives of observations extracted here.
-        processed_observation, self.old_observation = go(plain_obs, self.old_observation, step=self.stepcount)
+        processed_observation, self.old_observation = go(plain_obs, self.old_observation)
         return np.array(processed_observation)
 
     def step(self,action):

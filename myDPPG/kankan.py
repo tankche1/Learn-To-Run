@@ -1,4 +1,4 @@
-"""
+    """
 A simple version of OpenAI's Proximal Policy Optimization (PPO). [https://arxiv.org/abs/1707.06347]
 
 Distributing workers in parallel to collect data, then stop worker's roll-out and train PPO on collected data.

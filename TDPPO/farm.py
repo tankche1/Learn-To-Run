@@ -1,7 +1,7 @@
 import multiprocessing,time,random,threading
 from multiprocessing import Process, Pipe, Queue
 
-ncpu = 16
+ncpu = 32
 
 def standalone_headless_isolated(pq, cq, plock):
     # locking to prevent mixed-up printing.
@@ -44,7 +44,7 @@ def standalone_headless_isolated(pq, cq, plock):
             #     raise Exception('pipe message received by headless is not a tuple')
 
             if msg[0] == 'reset':
-                o = e.reset(difficulty=2)
+                o = e.reset(difficulty=0)
                 # conn.send(floatify(o))
                 cq.put(floatify(o))
                 # conn.put(floatify(o))
